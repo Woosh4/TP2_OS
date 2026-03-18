@@ -186,7 +186,7 @@ int main(int N, char* P[])
                     if(trace) printf("Message transféré à %s : %s", &buf[1], &buf[mess_id]);
                     buf[0] = '9';
                     strcpy(&buf[1], &buf[mess_id]);
-                    sendto(sid, buf, strlen(buf), 0, (struct sockaddr*)table[i].adresse_ip, sizeof(table[i].adresse_ip));
+                    sendto(sid, buf, strlen(buf), 0, (struct sockaddr*)&table[i].adresse_ip, sizeof(table[i].adresse_ip));
                 }
             }
         }
