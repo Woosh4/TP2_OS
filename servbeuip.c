@@ -10,10 +10,11 @@ socket en mode non connecté */
 #include <sys/socket.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <netinet/in.h>
 
 struct personne{
     char pseudo[30];
-    char adresse_ip[20];
+    struct sockaddr_in adresse_ip;
 };
 
 struct message{
@@ -42,7 +43,7 @@ void affiche_liste(){
     printf("----- ANNUAIRE -----\n");
     printf("-- PERSONNE -- ADRESSE -- \n");
     for(int i=0; i<table_wr; ++i){
-        printf("%s --- %s", table[i].pseudo, table[i].adresse_ip);
+        printf("%s --- %s", table[i].pseudo, inet_ntoa(table[i].adresse_ip.sin_addr));
     }
 }
 
@@ -70,7 +71,10 @@ int main(int N, char* P[])
         fprintf(stderr, "Utilisation: %s pseudo -DTRACE.\n", P[0]);
         return(1);
     }
-    if(N == 3) trace = 1;
+    if(N == 3 && strcmp(P[2], "-DTRACE")==0){
+        trace = 1;
+        printf("Mode Trace activé !\n");
+    }
     /* Creation du socket */
     if((sid = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
     {
@@ -124,43 +128,79 @@ int main(int N, char* P[])
 
         // ack avec nom si broadcast + pas mon message
         if(strcmp(&buf[6], P[1]) != 0 && buf[0] == (int)'1'){
-            if((ret = sendto(sid, "2BEUIPAlexis", 17, MSG_CONFIRM, (struct sockaddr*) &client_sock, sockaddr_taille)) == -1){
+            if((ret = sendto(sid, "2BEUIPAlexis", 14, MSG_CONFIRM, (struct sockaddr*) &client_sock, sockaddr_taille)) == -1){
                 perror("sendto");
             }
         }
 
         // ack simple tout le temps si pas mon message ni un ack
-        if(strcmp(&buf[6], P[1]) != 0 && buf[0] != (int)'2'){
-            if((ret = sendto(sid, "2BEUIP Bien reçu de Alexis !", 17, MSG_CONFIRM, (struct sockaddr*) &client_sock, sockaddr_taille)) == -1){
+        else if(strcmp(&buf[6], P[1]) != 0 && buf[0] != (int)'2'){
+            char ack_msg[LBUF];
+            sprintf(ack_msg, "2BEUIP%s", P[1]);
+            if((ret = sendto(sid, ack_msg, sizeof(ack_msg), MSG_CONFIRM, (struct sockaddr*) &client_sock, sockaddr_taille)) == -1){
                 perror("sendto");
             }
         }
 
-        // message correct d'un autre personne
-        if(strcmp(&buf[1], "BEUIP")){ 
+        // message correct d'une autre personne
+        if(strcmp(&buf[1], "BEUIP") == 0){ 
             if(table_wr < TABLE_TAILLE){
-                // cherche si adresse déjà connu :
+                // cherche si adresse déjà connue :
                 int connu = 0;
                 for(int i=0; i<table_wr; ++i){
-                    if(strcmp(table[i].adresse_ip, (char*)&client_sock.sin_addr.s_addr) == 0){
+                    if(table[i].adresse_ip.sin_addr.s_addr == client_sock.sin_addr.s_addr){
                         connu = 1;
                         if(trace) printf("Personne connue: %s", table[i].pseudo);
                         break;
                     }
                 }
                 if(!connu){
-                    memcpy(&table[table_wr].pseudo, &buf[6], strlen(&buf[6]));
-                    memcpy(&table[table_wr].adresse_ip, &client_sock.sin_addr.s_addr, sizeof(client_sock.sin_addr.s_addr));
-                    if(trace) printf("Nouvel utilisateur : numéro %d, nom: %s, adresse %s\n",table_wr, table[table_wr].pseudo, addrip(ntohl(client_sock.sin_addr.s_addr)));
+                    strcpy(table[table_wr].pseudo, &buf[6]);
+                    table[table_wr].adresse_ip = client_sock;
+                    if(trace) printf("Nouvel utilisateur : numéro %d, nom: %s, adresse %s\n", table_wr, table[table_wr].pseudo, inet_ntoa(client_sock.sin_addr));
                     ++table_wr;
                 }
             }
         }
 
-        // demande d'affichage de la liste
-        // !!!!!!!!!!!!! probablement pas bon
-        if(buf[0] == '3' && (client_sock.sin_addr.s_addr == "127.0.0.1")){
+        // demande d'affichage de la liste : code 3 et demande locale
+        if(buf[0] == '3' && (client_sock.sin_addr.s_addr == inet_addr("127.0.0.1"))){
             affiche_liste();
+        }
+
+        // demande d'envoi de message privé : code 4 et demande locale
+        if(buf[0] == '4' && (client_sock.sin_addr.s_addr == inet_addr("127.0.0.1"))){
+            //chercher où commence le message (après premier \0)
+            int mess_id = -1;
+            for(int i=0; i<LBUF; ++i){
+                if(buf[i] == '\0'){
+                    mess_id = i+1;
+                    break;
+                }
+                else if(i == LBUF-1) printf("ERREUR recherche message code 4\n");
+            }
+
+            // recherche du nom dans la base
+            for(int i=0; i<table_wr; ++i){
+                if(strcmp(&buf[1], table[i].pseudo) == 0){
+                    if(trace) printf("Message transféré à %s : %s", &buf[1], &buf[mess_id]);
+                    buf[0] = '9';
+                    strcpy(&buf[1], &buf[mess_id]);
+                    sendto(sid, buf, strlen(buf), 0, (struct sockaddr*)table[i].adresse_ip, sizeof(table[i].adresse_ip));
+                }
+            }
+        }
+
+        // réception d'un message privé
+        if(buf[0] == '9'){
+            // trouver le nom de l'expéditeur à partir de l'IP
+            for(int i=0; i<table_wr; ++i){
+                if(table[i].adresse_ip.sin_addr.s_addr == client_sock.sin_addr.s_addr){
+                    printf("Message de %s : %s", table[i].pseudo, &buf[1]);
+                    break;
+                }
+                else if(i == table_wr-1) printf("ERREUR expéditaire du message privé non trouvé\n");
+            }
         }
 
         printf("\n- - - - - - - - - -\n");
