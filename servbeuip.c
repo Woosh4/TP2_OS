@@ -203,6 +203,15 @@ int main(int N, char* P[])
             }
         }
 
+        // réception d'une demande de message à tous (locale)
+        if(buf[0] == '9' && (client_sock.sin_addr.s_addr == inet_addr("127.0.0.1"))){
+            if(trace) printf("Envoi du message à tout le monde : %s\n", &buf[1]);
+            // envoi à partir de 1 (0 est moi)
+            for(int i=1; i<table_wr; ++i){
+                sendto(sid, &buf[1], strlen(&buf[1]), 0, (struct sockaddr*)&table[i].adresse_ip, sizeof(table[i].adresse_ip));
+            }
+        }
+
         printf("\n- - - - - - - - - -\n");
     } while(1);
     
