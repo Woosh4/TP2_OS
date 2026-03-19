@@ -11,6 +11,9 @@ socket en mode non connecté */
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <signal.h>
+
+/* ----- STRUCTURES ----- */
 
 struct personne{
     char pseudo[30];
@@ -23,48 +26,67 @@ struct message{
     char nom[30];
 };
 
+/* -----*/
+/* ----- DEFINE ET VARIABLES GLOBALES ----- */
+/* -----*/
+
 #define LBUF 256
 #define PORT 9998
+
 #define TABLE_TAILLE 255
 struct personne table[TABLE_TAILLE];
 int table_wr = 0;
 
-char* addrip(unsigned long  A){
-    static char b[16];
-    sprintf(b, "%u.%u.%u.%u",
-        (unsigned int)(A>>24&0xFF),
-        (unsigned int)(A>>16&0xFF),
-        (unsigned int)(A>>8&0xFF),
-        (unsigned int)(A&0xFF));
-    return b;
-}
+int sid;
+struct sockaddr_in broadcast_sock;
+
+int trace = 0; // pour print debug, activé avec -DTRACE en lançant le programme
+
+/* -----*/
+/* ----- FONCTIONS ----- */
+/* -----*/
 
 void affiche_liste(){
     printf("----- ANNUAIRE -----\n");
     printf("-- PERSONNE -- ADRESSE -- \n");
     for(int i=0; i<table_wr; ++i){
-        printf("%s --- %s", table[i].pseudo, inet_ntoa(table[i].adresse_ip.sin_addr));
+        printf("%s --- %s\n", table[i].pseudo, inet_ntoa(table[i].adresse_ip.sin_addr));
     }
 }
 
-/* Parametre : 
+// envoie en broadcast le message de déconexion '0'
+void send_msg_disconnect(){
+    int ret;
+    char msg_deco[] = "0";
+    if((ret = sendto(sid, msg_deco, sizeof(msg_deco), 0, (struct sockaddr*) &broadcast_sock, sizeof(broadcast_sock))) == -1){
+        perror("sendto broadcast");
+    }
+}
+
+void disconnect(int signal){
+    send_msg_disconnect();
+    if(trace) printf("\nDéconnexion OK.\n");
+    exit(0);
+}
+
+/* -----*/
+/* ----- MAIN ----- */
+/* -----*/
+
+/* Parametre : nom -DTRACE
 */
 int main(int N, char* P[])
 {
-    int sid;
     int ret;
     char buf[LBUF+1];
-    struct sockaddr_in serveur_sock;
     struct sockaddr_in client_sock;
+    struct sockaddr_in serveur_sock;
     socklen_t sockaddr_taille;
-
-    struct sockaddr_in broadcast_sock;
     bzero(&broadcast_sock, sizeof(broadcast_sock));
     broadcast_sock.sin_family = AF_INET;
     broadcast_sock.sin_port = htons(PORT);
     broadcast_sock.sin_addr.s_addr = inet_addr("192.168.88.255");
     sockaddr_taille = sizeof(broadcast_sock);
-    int trace = 0;
 
     if(N != 2 && N != 3)
     {
@@ -100,6 +122,9 @@ int main(int N, char* P[])
         return(3);
     }
 
+    // si ctrl+C : message broadcast 0 puis quitter
+    signal(SIGINT, disconnect);
+
     struct message msg;
     msg.code = (int)'1';
     strcpy(msg.beuip, "BEUIP");
@@ -124,26 +149,28 @@ int main(int N, char* P[])
             return 4;
         }
         buf[ret] = '\0';
-        printf("BRUT: Recu de %s : %s\n",addrip(ntohl((client_sock.sin_addr.s_addr))), buf);
+        printf("BRUT: Recu de %s : %s\n", inet_ntoa(client_sock.sin_addr), buf);
 
         // ack avec nom si broadcast + pas mon message
         if(strcmp(&buf[6], P[1]) != 0 && buf[0] == (int)'1'){
-            if((ret = sendto(sid, "2BEUIPAlexis", 14, MSG_CONFIRM, (struct sockaddr*) &client_sock, sockaddr_taille)) == -1){
+            char temp_msg[LBUF];
+            sprintf(temp_msg, "2BEUIP%s", P[1]);
+            if((ret = sendto(sid, temp_msg, strlen(temp_msg), MSG_CONFIRM, (struct sockaddr*) &client_sock, sockaddr_taille)) == -1){
                 perror("sendto");
             }
         }
 
-        // ack simple tout le temps si pas mon message ni un ack
-        else if(strcmp(&buf[6], P[1]) != 0 && buf[0] != (int)'2'){
+        // ack simple tout le temps si pas mon message ni un ack, ni local
+        else if(strcmp(&buf[6], P[1]) != 0 && buf[0] != (int)'2' && client_sock.sin_addr.s_addr != inet_addr("127.0.0.1")){
             char ack_msg[LBUF];
             sprintf(ack_msg, "2BEUIP%s", P[1]);
-            if((ret = sendto(sid, ack_msg, sizeof(ack_msg), MSG_CONFIRM, (struct sockaddr*) &client_sock, sockaddr_taille)) == -1){
+            if((ret = sendto(sid, ack_msg, strlen(ack_msg), MSG_CONFIRM, (struct sockaddr*) &client_sock, sockaddr_taille)) == -1){
                 perror("sendto");
             }
         }
 
-        // message correct d'une autre personne
-        if(strcmp(&buf[1], "BEUIP") == 0){ 
+        // message correct d'une autre personne (strNcmp car pas de \0)
+        if(strncmp(&buf[1], "BEUIP", 5) == 0){ 
             if(table_wr < TABLE_TAILLE){
                 // cherche si adresse déjà connue :
                 int connu = 0;
@@ -184,9 +211,10 @@ int main(int N, char* P[])
             for(int i=0; i<table_wr; ++i){
                 if(strcmp(&buf[1], table[i].pseudo) == 0){
                     if(trace) printf("Message transféré à %s : %s", &buf[1], &buf[mess_id]);
-                    buf[0] = '9';
-                    strcpy(&buf[1], &buf[mess_id]);
-                    sendto(sid, buf, strlen(buf), 0, (struct sockaddr*)&table[i].adresse_ip, sizeof(table[i].adresse_ip));
+                    char sendbuf[LBUF];
+                    sendbuf[0] = '9';
+                    strcpy(&sendbuf[1], &buf[mess_id]);
+                    sendto(sid, sendbuf, strlen(sendbuf), 0, (struct sockaddr*)&table[i].adresse_ip, sizeof(table[i].adresse_ip));
                 }
             }
         }
@@ -204,11 +232,23 @@ int main(int N, char* P[])
         }
 
         // réception d'une demande de message à tous (locale)
-        if(buf[0] == '9' && (client_sock.sin_addr.s_addr == inet_addr("127.0.0.1"))){
+        if(buf[0] == '5' && (client_sock.sin_addr.s_addr == inet_addr("127.0.0.1"))){
             if(trace) printf("Envoi du message à tout le monde : %s\n", &buf[1]);
             // envoi à partir de 1 (0 est moi)
             for(int i=1; i<table_wr; ++i){
                 sendto(sid, &buf[1], strlen(&buf[1]), 0, (struct sockaddr*)&table[i].adresse_ip, sizeof(table[i].adresse_ip));
+            }
+        }
+
+        // annonce de déconnexion, message 0
+        // supprimer la personne de l'annuaire
+        if(buf[0] == '0'){
+            for(int i=0; i<table_wr; ++i){
+                if(table[i].adresse_ip.sin_addr.s_addr == client_sock.sin_addr.s_addr){
+                    if(trace) printf("%s s'est déconnecté.\n", table[i].pseudo);
+                    memset(&table[i].pseudo, '\0', sizeof(table[i].pseudo)); // reset nom
+                    memset(&table[i].adresse_ip, 0, sizeof(table[i].adresse_ip)); // reset IP
+                }
             }
         }
 
