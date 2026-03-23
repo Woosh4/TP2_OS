@@ -11,17 +11,22 @@
 
 #include <signal.h>
 #include "gescom.h"
+#include "creme.h"
 
 /* ------------------------------ définition variables globales*/
 
 char VERSION_GESCOM[] = "1.0";
 static char* VERSION_BICEPS = "?"; // vraie version dans biceps.c
+static char* VERSION_CREME = "?"; // vraie version dans creme.c
+
 ma_chaine prompt_main;
 int DTRACE = 0;
 char* Mots[MAX_MOTS];
 int NMots = 0;
 commande COMMANDE_INTERNE[NBMAXC];
 int commande_interne_count = 0;
+
+pid_t PID_SERVEUR = -1; // -1 = serveur OFF
 
 /* ------------------------------  fonctions */
 
@@ -185,7 +190,7 @@ void print_work_directory(void){
 }
 
 void print_version(void){
-    printf("Biceps version %s; Gescom version %s, par Alexis Lefèvre ☻\n", VERSION_GESCOM, VERSION_BICEPS);
+    printf("Biceps version %s; Gescom version %s, Creme version %s, par Alexis Lefèvre ☻\n", VERSION_GESCOM, VERSION_BICEPS, VERSION_CREME);
     return;
 }
 

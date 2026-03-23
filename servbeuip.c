@@ -170,7 +170,7 @@ int main(int N, char* P[])
         }
 
         // message correct d'une autre personne (strNcmp car pas de \0)
-        if(strncmp(&buf[1], "BEUIP", 5) == 0){ 
+        if((strncmp(&buf[1], "BEUIP", 5) == 0) && (client_sock.sin_addr.s_addr != inet_addr("127.0.0.1"))){ 
             if(table_wr < TABLE_TAILLE){
                 // cherche si adresse déjà connue :
                 int connu = 0;
