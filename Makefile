@@ -18,7 +18,7 @@ gescom.o : gescom.c
 
 
 serv : servbeuip.c
-	cc -o serv servbeuip.c -Wall
+	cc -o serv servbeuip.c -Wall -Werror
 
 clean :
 	rm -f biceps-debug serv *.o

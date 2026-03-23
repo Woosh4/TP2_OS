@@ -177,7 +177,7 @@ int main(int N, char* P[])
                 for(int i=0; i<table_wr; ++i){
                     if(table[i].adresse_ip.sin_addr.s_addr == client_sock.sin_addr.s_addr){
                         connu = 1;
-                        if(trace) printf("Personne connue: %s", table[i].pseudo);
+                        if(trace) printf("Personne connue: %s\n", table[i].pseudo);
                         break;
                     }
                 }
