@@ -20,6 +20,9 @@ gescom.o : gescom.c
 serv : servbeuip.c
 	cc -o serv servbeuip.c -Wall -Werror
 
+cli : cliudp.c
+	cc -o cli cliudp.c -Wall -Werror
+
 clean :
 	rm -f biceps-debug serv *.o
 
