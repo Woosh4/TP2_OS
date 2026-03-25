@@ -39,6 +39,7 @@ int table_wr = 0;
 
 int sid;
 struct sockaddr_in broadcast_sock;
+#define BROADCAST_ADDR "192.168.88.255"
 
 int trace = 0; // pour print debug, activé avec -DTRACE en lançant le programme
 
@@ -69,6 +70,32 @@ void disconnect(int signal){
     exit(0);
 }
 
+// initialise le broadcast socket (variable globale)
+void init_broadcast_sock(){
+    bzero(&broadcast_sock, sizeof(broadcast_sock));
+    broadcast_sock.sin_family = AF_INET;
+    broadcast_sock.sin_port = htons(PORT);
+    broadcast_sock.sin_addr.s_addr = inet_addr(BROADCAST_ADDR);
+    int broadcast_enable = 1;
+    if(setsockopt(sid, SOL_SOCKET, SO_BROADCAST, &broadcast_enable, sizeof(broadcast_enable)) == -1){
+        perror("setsockopt broadcast");
+        return 3;
+    }
+}
+
+/* vérifier les arguments du main */
+void check_arguments(int N, char* P[]){
+    if(N != 2 && N != 3)
+    {
+        fprintf(stderr, "Utilisation: %s pseudo -DTRACE.\n", P[0]);
+        exit(1);
+    }
+    if(N == 3 && strcmp(P[2], "-DTRACE")==0){
+        trace = 1;
+        printf("Mode Trace activé !\n");
+    }
+}
+
 /* -----*/
 /* ----- MAIN ----- */
 /* -----*/
@@ -77,26 +104,17 @@ void disconnect(int signal){
 */
 int main(int N, char* P[])
 {
+    //pour les codes retours
     int ret;
     char buf[LBUF+1];
     struct sockaddr_in client_sock;
     struct sockaddr_in serveur_sock;
-    socklen_t sockaddr_taille;
-    bzero(&broadcast_sock, sizeof(broadcast_sock));
-    broadcast_sock.sin_family = AF_INET;
-    broadcast_sock.sin_port = htons(PORT);
-    broadcast_sock.sin_addr.s_addr = inet_addr("192.168.88.255");
-    sockaddr_taille = sizeof(broadcast_sock);
 
-    if(N != 2 && N != 3)
-    {
-        fprintf(stderr, "Utilisation: %s pseudo -DTRACE.\n", P[0]);
-        return(1);
-    }
-    if(N == 3 && strcmp(P[2], "-DTRACE")==0){
-        trace = 1;
-        printf("Mode Trace activé !\n");
-    }
+    // init du socket pour les broadcasts
+    init_broadcast_sock();
+    /* vérifie les arguments du main*/
+    check_arguments(N,P);
+
     /* Creation du socket */
     if((sid = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
     {
@@ -109,21 +127,12 @@ int main(int N, char* P[])
     serveur_sock.sin_port = htons(PORT);
     serveur_sock.sin_addr.s_addr = htonl(INADDR_ANY);
 
-    int broadcastEnable = 1;
-    if(setsockopt(sid, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable)) == -1){
-        perror("setsockopt");
-        return 3;
-    }
-
     printf("Le serveur est attaché au port %d\n", PORT);
 
     if((ret = bind(sid, (struct sockaddr*)&serveur_sock, sizeof(serveur_sock))) == -1){
         perror("bind");
         return(3);
     }
-
-    // si ctrl+C : message broadcast 0 puis quitter
-    signal(SIGINT, disconnect);
 
     struct message msg;
     msg.code = (int)'1';
@@ -135,15 +144,17 @@ int main(int N, char* P[])
     strcpy(&buf[6], msg.nom);
     printf("buf pour envoi = %s\n", buf);
 
-    if((ret = sendto(sid, buf, 6+strlen(P[1]), 0, (struct sockaddr*) &broadcast_sock, sockaddr_taille)) == -1){
+    if((ret = sendto(sid, buf, 6+strlen(P[1]), 0, (struct sockaddr*) &broadcast_sock, sizeof(broadcast_sock))) == -1){
         perror("sendto");
     }
 
+    // si ctrl+C : message broadcast 0 puis quitter
+    signal(SIGINT, disconnect);
 
     /* Lecture des messages */
     printf("Ctrl+C pour quitter, début d'écoute.\n");
     do {
-        sockaddr_taille = sizeof(client_sock);
+        socklen_t sockaddr_taille = sizeof(client_sock);
         if((ret = recvfrom(sid, (void*)buf, LBUF, 0, (struct sockaddr*)&client_sock, &sockaddr_taille)) < 0){
             perror("recvfrom");
             return 4;
@@ -152,19 +163,19 @@ int main(int N, char* P[])
         printf("BRUT: Recu de %s : %s\n", inet_ntoa(client_sock.sin_addr), buf);
 
         // ack avec nom si broadcast + pas mon message
-        if(strcmp(&buf[6], P[1]) != 0 && buf[0] == (int)'1'){
+        if(buf[0] == (int)'1' && strcmp(&buf[6], P[1]) != 0){
             char temp_msg[LBUF];
             sprintf(temp_msg, "2BEUIP%s", P[1]);
-            if((ret = sendto(sid, temp_msg, strlen(temp_msg), MSG_CONFIRM, (struct sockaddr*) &client_sock, sockaddr_taille)) == -1){
+            if((ret = sendto(sid, temp_msg, strlen(temp_msg), MSG_CONFIRM, (struct sockaddr*) &client_sock, sizeof(client_sock))) == -1){
                 perror("sendto");
             }
         }
 
         // ack simple tout le temps si pas mon message ni un ack, ni local
-        else if(strcmp(&buf[6], P[1]) != 0 && buf[0] != (int)'2' && client_sock.sin_addr.s_addr != inet_addr("127.0.0.1")){
+        else if(buf[0] != (int)'2'&& strcmp(&buf[6], P[1]) != 0  && client_sock.sin_addr.s_addr != inet_addr("127.0.0.1")){
             char ack_msg[LBUF];
             sprintf(ack_msg, "2BEUIP%s", P[1]);
-            if((ret = sendto(sid, ack_msg, strlen(ack_msg), MSG_CONFIRM, (struct sockaddr*) &client_sock, sockaddr_taille)) == -1){
+            if((ret = sendto(sid, ack_msg, strlen(ack_msg), MSG_CONFIRM, (struct sockaddr*) &client_sock, sizeof(client_sock))) == -1){
                 perror("sendto");
             }
         }
