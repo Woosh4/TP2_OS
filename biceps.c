@@ -1,3 +1,5 @@
+/* biceps.c : Bel Interpréteur de Commandes des Elèves de Polytech Sorbonne*/
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -12,6 +14,7 @@
 #include <signal.h>
 
 #include "gescom.h"
+#include "creme.h"
 
 /* ------------------------------ version biceps / main */
 

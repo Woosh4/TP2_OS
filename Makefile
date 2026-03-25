@@ -1,4 +1,4 @@
-all : biceps-debug serv
+all : biceps-debug serv cli
 
 # Pour lancer vite
 go : all
@@ -18,7 +18,10 @@ gescom.o : gescom.c
 
 
 serv : servbeuip.c
-	cc -o serv servbeuip.c -Wall
+	cc -o servbeuip servbeuip.c -Wall -Werror
+
+cli : cliudp.c
+	cc -o cli cliudp.c -Wall -Werror
 
 clean :
 	rm -f biceps-debug serv *.o

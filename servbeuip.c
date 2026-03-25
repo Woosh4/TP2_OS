@@ -58,7 +58,7 @@ void affiche_liste(){
 // envoie en broadcast le message de déconexion '0'
 void send_msg_disconnect(){
     int ret;
-    char msg_deco[] = "0";
+    char msg_deco[] = "0BEUIP";
     if((ret = sendto(sid, msg_deco, sizeof(msg_deco), 0, (struct sockaddr*) &broadcast_sock, sizeof(broadcast_sock))) == -1){
         perror("sendto broadcast");
     }
@@ -181,14 +181,14 @@ int main(int N, char* P[])
         }
 
         // message correct d'une autre personne (strNcmp car pas de \0)
-        if(strncmp(&buf[1], "BEUIP", 5) == 0){ 
+        if((strncmp(&buf[1], "BEUIP", 5) == 0) && (client_sock.sin_addr.s_addr != inet_addr("127.0.0.1"))){ 
             if(table_wr < TABLE_TAILLE){
                 // cherche si adresse déjà connue :
                 int connu = 0;
                 for(int i=0; i<table_wr; ++i){
                     if(table[i].adresse_ip.sin_addr.s_addr == client_sock.sin_addr.s_addr){
                         connu = 1;
-                        if(trace) printf("Personne connue: %s", table[i].pseudo);
+                        if(trace) printf("Personne connue: %s\n", table[i].pseudo);
                         break;
                     }
                 }
@@ -201,12 +201,12 @@ int main(int N, char* P[])
             }
         }
 
-        // demande d'affichage de la liste : code 3 et demande locale
+        // 3. demande d'affichage de la liste : code 3 et demande locale
         if(buf[0] == '3' && (client_sock.sin_addr.s_addr == inet_addr("127.0.0.1"))){
             affiche_liste();
         }
 
-        // demande d'envoi de message privé : code 4 et demande locale
+        // 4. demande d'envoi de message privé : code 4 et demande locale
         if(buf[0] == '4' && (client_sock.sin_addr.s_addr == inet_addr("127.0.0.1"))){
             //chercher où commence le message (après premier \0)
             int mess_id = -1;
@@ -222,36 +222,37 @@ int main(int N, char* P[])
             for(int i=0; i<table_wr; ++i){
                 if(strcmp(&buf[1], table[i].pseudo) == 0){
                     if(trace) printf("Message transféré à %s : %s", &buf[1], &buf[mess_id]);
-                    char sendbuf[LBUF];
-                    sendbuf[0] = '9';
-                    strcpy(&sendbuf[1], &buf[mess_id]);
+                    char sendbuf[LBUF+7];
+                    sprintf(sendbuf, "9BEUIP%s", &buf[mess_id]);
                     sendto(sid, sendbuf, strlen(sendbuf), 0, (struct sockaddr*)&table[i].adresse_ip, sizeof(table[i].adresse_ip));
                 }
             }
         }
 
-        // réception d'un message privé
+        // 9. réception d'un message privé
         if(buf[0] == '9'){
             // trouver le nom de l'expéditeur à partir de l'IP
             for(int i=0; i<table_wr; ++i){
                 if(table[i].adresse_ip.sin_addr.s_addr == client_sock.sin_addr.s_addr){
-                    printf("Message de %s : %s", table[i].pseudo, &buf[1]);
+                    printf("Message de %s : %s", table[i].pseudo, &buf[6]);
                     break;
                 }
                 else if(i == table_wr-1) printf("ERREUR expéditaire du message privé non trouvé\n");
             }
         }
 
-        // réception d'une demande de message à tous (locale)
+        // 5. réception d'une demande de message à tous (locale)
         if(buf[0] == '5' && (client_sock.sin_addr.s_addr == inet_addr("127.0.0.1"))){
+            char buf_msg[LBUF+7];
+            sprintf(buf_msg, "5BEUIP%s", &buf[1]);
             if(trace) printf("Envoi du message à tout le monde : %s\n", &buf[1]);
-            // envoi à partir de 1 (0 est moi)
-            for(int i=1; i<table_wr; ++i){
+            // envoi à partir de 0 (donc moi même aussi: 0)
+            for(int i=0; i<table_wr; ++i){
                 sendto(sid, &buf[1], strlen(&buf[1]), 0, (struct sockaddr*)&table[i].adresse_ip, sizeof(table[i].adresse_ip));
             }
         }
 
-        // annonce de déconnexion, message 0
+        // 0. annonce de déconnexion, message 0
         // supprimer la personne de l'annuaire
         if(buf[0] == '0'){
             for(int i=0; i<table_wr; ++i){
