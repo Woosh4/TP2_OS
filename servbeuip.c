@@ -47,42 +47,6 @@ int trace = 0; // pour print debug, activé avec -DTRACE en lançant le programm
 /* ----- FONCTIONS ----- */
 /* -----*/
 
-void affiche_liste(){
-    printf("----- ANNUAIRE -----\n");
-    printf("-- PERSONNE -- ADRESSE -- \n");
-    for(int i=0; i<table_wr; ++i){
-        printf("%s --- %s\n", table[i].pseudo, inet_ntoa(table[i].adresse_ip.sin_addr));
-    }
-}
-
-// envoie en broadcast le message de déconexion '0'
-void send_msg_disconnect(){
-    int ret;
-    char msg_deco[] = "0BEUIP";
-    if((ret = sendto(sid, msg_deco, sizeof(msg_deco), 0, (struct sockaddr*) &broadcast_sock, sizeof(broadcast_sock))) == -1){
-        perror("sendto broadcast");
-    }
-}
-
-void disconnect(int signal){
-    send_msg_disconnect();
-    if(trace) printf("\nDéconnexion OK.\n");
-    exit(0);
-}
-
-// initialise le broadcast socket (variable globale)
-void init_broadcast_sock(){
-    bzero(&broadcast_sock, sizeof(broadcast_sock));
-    broadcast_sock.sin_family = AF_INET;
-    broadcast_sock.sin_port = htons(PORT);
-    broadcast_sock.sin_addr.s_addr = inet_addr(BROADCAST_ADDR);
-    int broadcast_enable = 1;
-    if(setsockopt(sid, SOL_SOCKET, SO_BROADCAST, &broadcast_enable, sizeof(broadcast_enable)) == -1){
-        perror("setsockopt broadcast");
-        return 3;
-    }
-}
-
 /* vérifier les arguments du main */
 void check_arguments(int N, char* P[]){
     if(N != 2 && N != 3)
@@ -96,6 +60,78 @@ void check_arguments(int N, char* P[]){
     }
 }
 
+// initialise le broadcast socket (variable globale)
+void init_broadcast_sock(){
+    bzero(&broadcast_sock, sizeof(broadcast_sock));
+    broadcast_sock.sin_family = AF_INET;
+    broadcast_sock.sin_port = htons(PORT);
+    broadcast_sock.sin_addr.s_addr = inet_addr(BROADCAST_ADDR);
+    int broadcast_enable = 1;
+    if(setsockopt(sid, SOL_SOCKET, SO_BROADCAST, &broadcast_enable, sizeof(broadcast_enable)) == -1){
+        perror("setsockopt broadcast");
+        exit(3);
+    }
+}
+
+/* initialise le socket pour le serveur et fais le lien au fd,
+en utilisant la variable globale sid */
+void init_serveur() {
+    struct sockaddr_in serveur_sock;
+    if((sid = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
+        perror("socket");
+        exit(2);
+    }
+
+    bzero(&serveur_sock, sizeof(serveur_sock));
+    serveur_sock.sin_family = AF_INET;
+    serveur_sock.sin_port = htons(PORT);
+    serveur_sock.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    if(bind(sid, (struct sockaddr*)&serveur_sock, sizeof(serveur_sock)) == -1){
+        perror("bind");
+        exit(3);
+    }
+    printf("Le serveur est attaché au port %d\n", PORT);
+}
+
+/* Envoie le message de connexion 1BEUIPNom */
+void envoi_msg_connexion(const char* mon_pseudo) {
+    char buf[LBUF+1];
+    sprintf(buf, "1BEUIP");
+    strcpy(buf[6], &mon_pseudo);
+    if(trace) printf("buf pour envoi = %s\n", buf);
+
+    if(sendto(sid, buf, 6+strlen(mon_pseudo), 0, (struct sockaddr*) &broadcast_sock, sizeof(broadcast_sock)) == -1){
+        perror("sendto broadcast connexion");
+    }
+}
+
+// envoie en broadcast le message de déconexion "0BEUIP"
+void send_msg_disconnect(){
+    int ret;
+    char msg_deco[] = "0BEUIP";
+    if((ret = sendto(sid, msg_deco, sizeof(msg_deco), 0, (struct sockaddr*) &broadcast_sock, sizeof(broadcast_sock))) == -1){
+        perror("sendto broadcast");
+    }
+}
+
+void affiche_liste(){
+    printf("----- ANNUAIRE -----\n");
+    printf("-- PERSONNE -- ADRESSE -- \n");
+    for(int i=0; i<table_wr; ++i){
+        printf("%s --- %s\n", table[i].pseudo, inet_ntoa(table[i].adresse_ip.sin_addr));
+    }
+}
+
+
+
+void disconnect(int signal){
+    send_msg_disconnect();
+    if(trace) printf("\nDéconnexion OK.\n");
+    exit(0);
+}
+
+
 /* -----*/
 /* ----- MAIN ----- */
 /* -----*/
@@ -108,45 +144,15 @@ int main(int N, char* P[])
     int ret;
     char buf[LBUF+1];
     struct sockaddr_in client_sock;
-    struct sockaddr_in serveur_sock;
 
     // init du socket pour les broadcasts
     init_broadcast_sock();
     /* vérifie les arguments du main*/
     check_arguments(N,P);
-
-    /* Creation du socket */
-    if((sid = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
-    {
-        perror("socket");
-        return(2);
-    }
-
-    bzero(&serveur_sock, sizeof(serveur_sock));
-    serveur_sock.sin_family = AF_INET;
-    serveur_sock.sin_port = htons(PORT);
-    serveur_sock.sin_addr.s_addr = htonl(INADDR_ANY);
-
-    printf("Le serveur est attaché au port %d\n", PORT);
-
-    if((ret = bind(sid, (struct sockaddr*)&serveur_sock, sizeof(serveur_sock))) == -1){
-        perror("bind");
-        return(3);
-    }
-
-    struct message msg;
-    msg.code = (int)'1';
-    strcpy(msg.beuip, "BEUIP");
-    strcpy(msg.nom, P[1]);
-
-    buf[0] = msg.code;
-    strcpy(&buf[1], msg.beuip);
-    strcpy(&buf[6], msg.nom);
-    printf("buf pour envoi = %s\n", buf);
-
-    if((ret = sendto(sid, buf, 6+strlen(P[1]), 0, (struct sockaddr*) &broadcast_sock, sizeof(broadcast_sock))) == -1){
-        perror("sendto");
-    }
+    /* Lance le serveur + bind au sid en variable globale */
+    init_serveur();
+    /* Envoi 1BEUIPNom le broadcast de connexion */
+    envoi_msg_connexion(P[1]);
 
     // si ctrl+C : message broadcast 0 puis quitter
     signal(SIGINT, disconnect);
