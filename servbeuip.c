@@ -98,7 +98,7 @@ void init_serveur() {
 void envoi_msg_connexion(const char* mon_pseudo) {
     char buf[LBUF+1];
     sprintf(buf, "1BEUIP");
-    strcpy(buf[6], &mon_pseudo);
+    strcpy(&buf[6], mon_pseudo);
     if(trace) printf("buf pour envoi = %s\n", buf);
 
     if(sendto(sid, buf, 6+strlen(mon_pseudo), 0, (struct sockaddr*) &broadcast_sock, sizeof(broadcast_sock)) == -1){
@@ -123,14 +123,142 @@ void affiche_liste(){
     }
 }
 
+/* ajouter une nouvelle personne à l'annuaire, pseudo + ip*/
+void ajouter_personne(const char* pseudo, struct sockaddr_in client_sock) {
+    if(table_wr >= TABLE_TAILLE) return;
+    
+    int connu = 0;
+    for(int i=0; i<table_wr; ++i){
+        if(table[i].adresse_ip.sin_addr.s_addr == client_sock.sin_addr.s_addr){
+            connu = 1;
+            if(trace) printf("Personne connue: %s\n", table[i].pseudo);
+            break;
+        }
+    }
+    if(!connu){
+        strcpy(table[table_wr].pseudo, pseudo);
+        table[table_wr].adresse_ip = client_sock;
+        if(trace) printf("Nouvel utilisateur : numéro %d, nom: %s, adresse %s\n", table_wr, table[table_wr].pseudo, inet_ntoa(client_sock.sin_addr));
+        ++table_wr;
+    }
+}
 
+/* retire une personne de l'annuaire en passant par son IP */
+void retirer_personne(struct sockaddr_in client_sock) {
+    for(int i=0; i<table_wr; ++i){
+        if(table[i].adresse_ip.sin_addr.s_addr == client_sock.sin_addr.s_addr){
+            if(trace) printf("%s s'est déconnecté.\n", table[i].pseudo);
+            memset(&table[i].pseudo, '\0', sizeof(table[i].pseudo)); 
+            memset(&table[i].adresse_ip, 0, sizeof(table[i].adresse_ip)); 
+            break; // Une seule adresse correspondante
+        }
+    }
+}
 
+/* envoie le message ack 2BEUIP avec mon pseudo ensuite au socket */
+void repondre_ack(struct sockaddr_in client_sock, const char* mon_pseudo) {
+    char ack_msg[LBUF];
+    sprintf(ack_msg, "2BEUIP%s", mon_pseudo);
+    if(sendto(sid, ack_msg, strlen(ack_msg), MSG_CONFIRM, (struct sockaddr*) &client_sock, sizeof(client_sock)) == -1){
+        perror("sendto ack");
+    }
+}
+
+/* gère le code 4 : demande d'envoi de message privé*/
+void gerer_envoi_prive_local(const char* buf) {
+    int mess_id = -1;
+    /* messages du type DESTINATAIRE\0MESSAGE */
+    for(int i=0; i<LBUF; ++i){
+        if(buf[i] == '\0'){
+            mess_id = i+1;
+            break;
+        }
+    }
+    if(mess_id == -1) {
+        printf("ERREUR recherche message code 4\n");
+        return;
+    }
+
+    for(int i=0; i<table_wr; ++i){
+        if(strcmp(&buf[1], table[i].pseudo) == 0){
+            if(trace) printf("Message transféré à %s : %s", &buf[1], &buf[mess_id]);
+            char sendbuf[LBUF+7];
+            sprintf(sendbuf, "9BEUIP%s", &buf[mess_id]);
+            sendto(sid, sendbuf, strlen(sendbuf), 0, (struct sockaddr*)&table[i].adresse_ip, sizeof(table[i].adresse_ip));
+            return; 
+        }
+    }
+    printf("Utilisateur non trouvé dans l'annuaire.\n");
+}
+
+/* code 9 : réception d'un message privé */
+void gerer_reception_prive(const char* buf, struct sockaddr_in client_sock) {
+    for(int i=0; i<table_wr; ++i){
+        if(table[i].adresse_ip.sin_addr.s_addr == client_sock.sin_addr.s_addr && table[i].pseudo[0] != '\0'){
+            printf("Message de %s : %s", table[i].pseudo, &buf[6]);
+            return;
+        }
+    }
+    printf("ERREUR: expéditeur du message privé non trouvé dans l'annuaire\n");
+}
+
+/* code 5 + local : demande d'envoi d'un message à tous, en broadcast */
+void diffuser_message_local(const char* buf) {
+    if(trace) printf("Envoi du message à tout le monde : %s\n", &buf[1]);
+    for(int i=0; i<table_wr; ++i){
+        if (table[i].pseudo[0] != '\0') {
+            sendto(sid, &buf[1], strlen(&buf[1]), 0, (struct sockaddr*)&table[i].adresse_ip, sizeof(table[i].adresse_ip));
+        }
+    }
+}
+
+/* lance les fonctions suivant le code du message et si il est local ou non */
+void traiter_message_recu(char* buf, int ret, struct sockaddr_in client_sock, const char* mon_pseudo) {
+    buf[ret] = '\0';
+    printf("BRUT: Recu de %s : %s\n", inet_ntoa(client_sock.sin_addr), buf);
+
+    char code = buf[0];
+    int is_local = (client_sock.sin_addr.s_addr == inet_addr("127.0.0.1"));
+
+    // ack si nouvelle connexion ou tout autre message qui n'est pas un ack
+    // sauf messages locaux et messages reçus de moi même par le broadcast : pas de ack
+    if((code == '1' || code != '2') && strcmp(&buf[6], mon_pseudo) != 0 && !is_local){
+        repondre_ack(client_sock, mon_pseudo);
+    }
+
+    // màj de l'annuaire si le message est correct
+    if((strncmp(&buf[1], "BEUIP", 5) == 0) && !is_local){ 
+        ajouter_personne(&buf[6], client_sock);
+    }
+
+    // choix de l'action suivant le code + local ou pas
+    switch(code){
+        case '0':
+            retirer_personne(client_sock);
+            break;
+        case '3':
+            if(is_local) affiche_liste();
+            break;
+        case '4':
+            if(is_local) gerer_envoi_prive_local(buf);
+            break;
+        case '5':
+            if(is_local) diffuser_message_local(buf);
+            break;
+        case '9':
+            gerer_reception_prive(buf, client_sock);
+            break;
+    }
+    // séparation pour rendre plus lisible
+    printf("\n- - - - - - - - - -\n");
+}
+
+/* fonction de déconnexion reliée au signal sigint */
 void disconnect(int signal){
     send_msg_disconnect();
     if(trace) printf("\nDéconnexion OK.\n");
     exit(0);
 }
-
 
 /* -----*/
 /* ----- MAIN ----- */
@@ -145,16 +273,16 @@ int main(int N, char* P[])
     char buf[LBUF+1];
     struct sockaddr_in client_sock;
 
-    // init du socket pour les broadcasts
-    init_broadcast_sock();
     /* vérifie les arguments du main*/
     check_arguments(N,P);
     /* Lance le serveur + bind au sid en variable globale */
     init_serveur();
+    /* init du socket pour les broadcasts */
+    init_broadcast_sock();
+
     /* Envoi 1BEUIPNom le broadcast de connexion */
     envoi_msg_connexion(P[1]);
-
-    // si ctrl+C : message broadcast 0 puis quitter
+    /* si ctrl+C : message broadcast 0 puis quitter */
     signal(SIGINT, disconnect);
 
     /* Lecture des messages */
@@ -165,112 +293,8 @@ int main(int N, char* P[])
             perror("recvfrom");
             return 4;
         }
-        buf[ret] = '\0';
-        printf("BRUT: Recu de %s : %s\n", inet_ntoa(client_sock.sin_addr), buf);
 
-        // ack avec nom si broadcast + pas mon message
-        if(buf[0] == (int)'1' && strcmp(&buf[6], P[1]) != 0){
-            char temp_msg[LBUF];
-            sprintf(temp_msg, "2BEUIP%s", P[1]);
-            if((ret = sendto(sid, temp_msg, strlen(temp_msg), MSG_CONFIRM, (struct sockaddr*) &client_sock, sizeof(client_sock))) == -1){
-                perror("sendto");
-            }
-        }
-
-        // ack simple tout le temps si pas mon message ni un ack, ni local
-        else if(buf[0] != (int)'2'&& strcmp(&buf[6], P[1]) != 0  && client_sock.sin_addr.s_addr != inet_addr("127.0.0.1")){
-            char ack_msg[LBUF];
-            sprintf(ack_msg, "2BEUIP%s", P[1]);
-            if((ret = sendto(sid, ack_msg, strlen(ack_msg), MSG_CONFIRM, (struct sockaddr*) &client_sock, sizeof(client_sock))) == -1){
-                perror("sendto");
-            }
-        }
-
-        // message correct d'une autre personne (strNcmp car pas de \0)
-        if((strncmp(&buf[1], "BEUIP", 5) == 0) && (client_sock.sin_addr.s_addr != inet_addr("127.0.0.1"))){ 
-            if(table_wr < TABLE_TAILLE){
-                // cherche si adresse déjà connue :
-                int connu = 0;
-                for(int i=0; i<table_wr; ++i){
-                    if(table[i].adresse_ip.sin_addr.s_addr == client_sock.sin_addr.s_addr){
-                        connu = 1;
-                        if(trace) printf("Personne connue: %s\n", table[i].pseudo);
-                        break;
-                    }
-                }
-                if(!connu){
-                    strcpy(table[table_wr].pseudo, &buf[6]);
-                    table[table_wr].adresse_ip = client_sock;
-                    if(trace) printf("Nouvel utilisateur : numéro %d, nom: %s, adresse %s\n", table_wr, table[table_wr].pseudo, inet_ntoa(client_sock.sin_addr));
-                    ++table_wr;
-                }
-            }
-        }
-
-        // 3. demande d'affichage de la liste : code 3 et demande locale
-        if(buf[0] == '3' && (client_sock.sin_addr.s_addr == inet_addr("127.0.0.1"))){
-            affiche_liste();
-        }
-
-        // 4. demande d'envoi de message privé : code 4 et demande locale
-        if(buf[0] == '4' && (client_sock.sin_addr.s_addr == inet_addr("127.0.0.1"))){
-            //chercher où commence le message (après premier \0)
-            int mess_id = -1;
-            for(int i=0; i<LBUF; ++i){
-                if(buf[i] == '\0'){
-                    mess_id = i+1;
-                    break;
-                }
-                else if(i == LBUF-1) printf("ERREUR recherche message code 4\n");
-            }
-
-            // recherche du nom dans la base
-            for(int i=0; i<table_wr; ++i){
-                if(strcmp(&buf[1], table[i].pseudo) == 0){
-                    if(trace) printf("Message transféré à %s : %s", &buf[1], &buf[mess_id]);
-                    char sendbuf[LBUF+7];
-                    sprintf(sendbuf, "9BEUIP%s", &buf[mess_id]);
-                    sendto(sid, sendbuf, strlen(sendbuf), 0, (struct sockaddr*)&table[i].adresse_ip, sizeof(table[i].adresse_ip));
-                }
-            }
-        }
-
-        // 9. réception d'un message privé
-        if(buf[0] == '9'){
-            // trouver le nom de l'expéditeur à partir de l'IP
-            for(int i=0; i<table_wr; ++i){
-                if(table[i].adresse_ip.sin_addr.s_addr == client_sock.sin_addr.s_addr){
-                    printf("Message de %s : %s", table[i].pseudo, &buf[6]);
-                    break;
-                }
-                else if(i == table_wr-1) printf("ERREUR expéditaire du message privé non trouvé\n");
-            }
-        }
-
-        // 5. réception d'une demande de message à tous (locale)
-        if(buf[0] == '5' && (client_sock.sin_addr.s_addr == inet_addr("127.0.0.1"))){
-            char buf_msg[LBUF+7];
-            sprintf(buf_msg, "5BEUIP%s", &buf[1]);
-            if(trace) printf("Envoi du message à tout le monde : %s\n", &buf[1]);
-            // envoi à partir de 0 (donc moi même aussi: 0)
-            for(int i=0; i<table_wr; ++i){
-                sendto(sid, &buf[1], strlen(&buf[1]), 0, (struct sockaddr*)&table[i].adresse_ip, sizeof(table[i].adresse_ip));
-            }
-        }
-
-        // 0. annonce de déconnexion, message 0
-        // supprimer la personne de l'annuaire
-        if(buf[0] == '0'){
-            for(int i=0; i<table_wr; ++i){
-                if(table[i].adresse_ip.sin_addr.s_addr == client_sock.sin_addr.s_addr){
-                    if(trace) printf("%s s'est déconnecté.\n", table[i].pseudo);
-                    memset(&table[i].pseudo, '\0', sizeof(table[i].pseudo)); // reset nom
-                    memset(&table[i].adresse_ip, 0, sizeof(table[i].adresse_ip)); // reset IP
-                }
-            }
-        }
-
-        printf("\n- - - - - - - - - -\n");
+        traiter_message_recu(buf, ret, client_sock, P[1]);
     } while(1);
     
     printf("Fin du programme.\n");
