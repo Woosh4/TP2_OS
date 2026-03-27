@@ -286,7 +286,7 @@ int main(int N, char* P[])
     signal(SIGINT, disconnect);
 
     /* Lecture des messages */
-    printf("Ctrl+C pour quitter, début d'écoute.\n");
+    if(trace) printf("Ctrl+C pour quitter, début d'écoute.\n");
     do {
         socklen_t sockaddr_taille = sizeof(client_sock);
         if((ret = recvfrom(sid, (void*)buf, LBUF, 0, (struct sockaddr*)&client_sock, &sockaddr_taille)) < 0){
@@ -297,6 +297,6 @@ int main(int N, char* P[])
         traiter_message_recu(buf, ret, client_sock, P[1]);
     } while(1);
     
-    printf("Fin du programme.\n");
+    if(trace) printf("Fin du programme.\n");
     return 0;
 }

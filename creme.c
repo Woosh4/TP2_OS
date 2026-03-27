@@ -1,11 +1,15 @@
 /* creme.c : Commandes Rapides pour l’Envoi de Messages Evolués */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <signal.h>
 #include <string.h>
 #include <netinet/in.h>
+#include <netdb.h>
+
+#include "creme.h"
 
 /* ----- Variables globales ----- */
 
@@ -16,93 +20,124 @@ pid_t PID_SERVEUR = -1; // -1 = serveur OFF
 
 /* ----- fonctions ----- */
 
-void beuip_start(char* pseudo){
-    if(PID_SERVEUR != -1) return;
+int beuip_start(int argc, char* argv[]){
+    if(argc != 2){
+        printf("Utilisation : beuip_start pseudo\n");
+        return 1;
+    }
+    if(PID_SERVEUR != -1) {
+        printf("Le serveur est déjà lancé (PID: %d).\n", PID_SERVEUR);
+        return 1;
+    }
     if((PID_SERVEUR = fork()) == -1){
         perror("fork serveur");
+        return 1;
     }
     /* fils : lancer serveur */
     if(PID_SERVEUR == 0){
-        execv("./servbeuip", pseudo);
-        /* erreur lancement */
-        fprintf(stderr, "ERREUR lancement serveur");
+        char *args[] = {"./servbeuip", argv[1], NULL}; 
+        execv(args[0], args);
+        /* Si execv réussit, cette ligne n'est jamais atteinte */
+        perror("erreur du lancement du serveur (exécutable servbeuip bien présent?)");
         exit(1);
     }
     /* père */
-    else{
-        return;
+    printf("Serveur lancé avec le pseudo '%s'.\n", argv[1]);
+    return 0;
+}
+
+int beuip_stop(int argc, char* argv[]){
+    if(PID_SERVEUR == -1) {
+        printf("Erreur serveur pas encore lancé.\n");
+        return 1;
+    }
+    kill(PID_SERVEUR, SIGINT);
+    printf("Arret du serveur (PID: %d).\n", PID_SERVEUR);
+    PID_SERVEUR = -1;
+    return 0;
+}
+
+/* pour pouvoir gérer les espaces */
+void concatener_message(char* destination, int argc, char* argv[], int debut_idx) {
+    destination[0] = '\0';
+    for(int i = debut_idx; i < argc; ++i){
+        strcat(destination, argv[i]);
+        if(i < argc - 1) strcat(destination, " "); // Ajoute un espace entre les mots
     }
 }
 
-void beuip_stop(){
-    if(PID_SERVEUR == -1) return;
-    kill(PID_SERVEUR, SIGINT);
-    PID_SERVEUR = -1;
-    return;
-}
-
-void mess(int argc, char* argv[]){
-    if(argc == 0){
-        printf("Pas assez d'arguments pour mess");
-        return;
+int mess(int argc, char* argv[]){
+    if(argc < 2){
+        printf("Utilisation: beuip_mess -l\nbeuip_mess all message\nbeuip_mess nom message\n");
+        return 1;
     }
 
     struct sockaddr_in Sock;
     struct hostent *h;
-    int pid;
+    int sock_fd;
 
-    /* Creation du socket */
-    if((pid = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
-    {
+    if((sock_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
         perror("socket");
-        return(2);
+        return 2;
     }
-    /* Recuperation adresse du serveur */
     if(!(h=gethostbyname("127.0.0.1"))){
         perror("127.0.0.1");
-        return(3);
+        close(sock_fd);
+        return 3;
     }
     bzero(&Sock, sizeof(Sock));
     Sock.sin_family = AF_INET;
     bcopy(h->h_addr, &Sock.sin_addr, h->h_length);
-    Sock.sin_port = htons(atoi("9998"));
+    Sock.sin_port = htons(9998);
 
-    /* liste : arg -l*/
-    if(argc == 1 && (strcmp(argv[0], "-l") == 0)){
-        if(sendto(pid, "0BEUIP", 7, 0, (struct sockaddr*)&Sock, sizeof(Sock))==-1){
-            /*"(struct sockaddr*)&Sock" : cast, puis la fonction en utilisant la famille recast dans le bon type (ipv4, ipv6..)*/
+    /* arg: -l (liste) */
+    if(argc == 2 && (strcmp(argv[1], "-l") == 0)){
+        // On envoie simplement "3" pour déclencher l'affichage local du serveur
+        if(sendto(sock_fd, "3", 1, 0, (struct sockaddr*)&Sock, sizeof(Sock))==-1){
             perror("sendto liste");
-            return 4;
         }
-        return;
+        close(sock_fd);
+        return 0;
     }
 
-    /* message à une personne : nom msg*/
-    if(argc == 2 && (strcmp(argv[0], "all") != 0)){
+    /* arg: all message */
+    if(argc >= 3 && (strcmp(argv[1], "all") == 0)){
         char msg_buf[256];
-        sprintf(msg_buf, "4BEUIP%s%s%s", '\0', argv[0], argv[1]);
-        if(sendto(pid, msg_buf, 6+strlen(msg_buf[6]), 0, (struct sockaddr*)&Sock, sizeof(Sock))==-1){
-            /*"(struct sockaddr*)&Sock" : cast, puis la fonction en utilisant la famille recast dans le bon type (ipv4, ipv6..)*/
-            perror("sendto msg personne");
-            return 4;
-        }
-        printf("Envoi OK !\n");
-        return;
-    }
+        msg_buf[0] = '5';
+        concatener_message(&msg_buf[1], argc, argv, 2);
 
-    /* message à tous broadcast : all msg */
-    if(argc == 2 && (strcmp(argv[0], "all") == 0)){
-        char msg_buf[256];
-        sprintf(msg_buf, "5BEUIP%s", argv[1]);
-        if(sendto(pid, msg_buf, 6+strlen(msg_buf[6]), 0, (struct sockaddr*)&Sock, sizeof(Sock))==-1){
-            /*"(struct sockaddr*)&Sock" : cast, puis la fonction en utilisant la famille recast dans le bon type (ipv4, ipv6..)*/
+        if(sendto(sock_fd, msg_buf, 1 + strlen(&msg_buf[1]), 0, (struct sockaddr*)&Sock, sizeof(Sock))==-1){
             perror("sendto msg all");
-            return 4;
+        } else {
+            printf("Envoi à tous OK !\n");
         }
-        printf("Envoi OK !\n");
-        return;
+        close(sock_fd);
+        return 0;
     }
 
-    /* si aucun autre cas : erreur */
-    fprintf(stderr, "ERREUR mauvaise utilisation de Mess\n");
+    /* arg: nom message */
+    if(argc >= 3 && (strcmp(argv[1], "all") != 0)){
+        char msg_buf[256];
+        msg_buf[0] = '4';
+        
+        strcpy(&msg_buf[1], argv[1]); // Copie du pseudo
+        int index_msg = 1+1 + strlen(argv[1]); // code+\0 + longueur
+        
+        concatener_message(&msg_buf[index_msg], argc, argv, 2);
+        
+        int taille_totale = index_msg + strlen(&msg_buf[index_msg]);
+
+        if(sendto(sock_fd, msg_buf, taille_totale, 0, (struct sockaddr*)&Sock, sizeof(Sock))==-1){
+            perror("sendto msg privé");
+        } else {
+            printf("Envoi privé OK\n");
+        }
+        close(sock_fd);
+        return 0;
+    }
+    
+    // sinon erreur
+    fprintf(stderr, "ERREUR mauvaise utilisation de beuip_mess\n");
+    close(sock_fd);
+    return 1;
 }

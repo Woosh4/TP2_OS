@@ -17,7 +17,6 @@
 
 char VERSION_GESCOM[] = "1.0";
 static char* VERSION_BICEPS = "?"; // vraie version dans biceps.c
-static char* VERSION_CREME = "?"; // vraie version dans creme.c
 
 ma_chaine prompt_main;
 int DTRACE = 0;
@@ -25,8 +24,6 @@ char* Mots[MAX_MOTS];
 int NMots = 0;
 commande COMMANDE_INTERNE[NBMAXC];
 int commande_interne_count = 0;
-
-pid_t PID_SERVEUR = -1; // -1 = serveur OFF
 
 /* ------------------------------  fonctions */
 
@@ -142,6 +139,9 @@ void majComInt(void){ /* mise a jour des commandes internes */
     ajouteCom("pwd", print_work_directory);
     ajouteCom("vers", print_version);
     ajouteCom("history", print_history);
+    ajouteCom("beuip_start", beuip_start);
+    ajouteCom("beuip_stop", beuip_stop);
+    ajouteCom("beuip_mess", mess);
 }
 
 /* Affiche toutes les commandes internes */

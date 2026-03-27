@@ -1,5 +1,8 @@
 .vscode
 biceps-debug
+biceps
 serv
+cli
+
 *.o
 consigne_rendu.png
