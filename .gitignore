@@ -2,6 +2,7 @@
 biceps-debug
 biceps
 serv
+servbeuip
 cli
 
 *.o
