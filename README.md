@@ -14,3 +14,5 @@ le démarrage et l'utilisation du serveur se fait depuis le terminal biceps : il
 - beuip_mess all message , pour un message broadcast à tous.
 
 Ces commandes ne fonctionneront pas toutes si le serveur ne peut pas se connecter au boitier.
+Pour l'utiliser, il suffit de faire "make", puis de lancer "./biceps".
+Une fois le programme lancé, les commandes internes sont accessibles en entrant "liste" dans le terminal.
