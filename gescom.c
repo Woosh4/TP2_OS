@@ -132,6 +132,28 @@ void ajouteCom(char* nom, void (*fonc)){
     return;
 }
 
+void beuip_comm(int N, char* P[]) {
+    if (N < 2) {
+        printf("Utilisation : beuip [start|stop|mess] ...\n");
+        return;
+    }
+    
+    if (strcmp(P[1], "start") == 0) {
+        beuip_start(N - 1, P + 1);
+        return;
+    }
+    if (strcmp(P[1], "stop") == 0) {
+        beuip_stop(N - 1, P + 1);
+        return;
+    }
+    if (strcmp(P[1], "mess") == 0) {
+        mess(N - 1, P + 1);
+        return;
+    }
+
+    printf("Commande beuip inconnue : '%s'\n", P[1]);
+}
+
 void majComInt(void){ /* mise a jour des commandes internes */
     ajouteCom("exit", Sortie);
     ajouteCom("liste", listeComInt);
@@ -139,9 +161,7 @@ void majComInt(void){ /* mise a jour des commandes internes */
     ajouteCom("pwd", print_work_directory);
     ajouteCom("vers", print_version);
     ajouteCom("history", print_history);
-    ajouteCom("beuip_start", beuip_start);
-    ajouteCom("beuip_stop", beuip_stop);
-    ajouteCom("beuip_mess", mess);
+    ajouteCom("beuip", beuip_comm); // commandes beuip gérées dans beuip_comm
 }
 
 /* Affiche toutes les commandes internes */

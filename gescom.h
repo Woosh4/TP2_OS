@@ -66,6 +66,9 @@ int Sortie(int N, char *P[]);
 /* ajoute dans COMMANDE_INTERNE le nom et sa fonction associée*/
 void ajouteCom(char* nom, void (*fonc));
 
+/* sépare les différentes commandes BEUIP */
+void beuip_comm(int N, char* P[]);
+
 /* ajoute chaque commande interne*/
 void majComInt(void);
 

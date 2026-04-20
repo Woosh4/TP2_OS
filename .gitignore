@@ -4,6 +4,9 @@ biceps
 serv
 servbeuip
 cli
+biceps-memory-leaks
 
 *.o
+*.exe
 consigne_rendu.png
+consignes_rendu_tp3.txt

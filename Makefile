@@ -2,16 +2,16 @@ all : biceps serv
 
 # Pour lancer vite, à éviter sauf pour débug
 go : all
-	valgrind --leak-check=full ./biceps-debug -DTRACE
+	./biceps -DTRACE
 
 biceps : biceps.o gescom.o creme.o
 	cc -o biceps biceps.o gescom.o creme.o -Wall -Werror -lreadline
 
-biceps-debug : biceps.o gescom.o creme.o
-	cc -o biceps-debug biceps.o gescom.o creme.o -Wall -Werror -lreadline -g
+memory-leak : biceps.o gescom.o creme.o
+	cc -o biceps-memory-leaks biceps.o gescom.o creme.o -Wall -Werror -lreadline -g -O0
 
-biceps-valgrind : biceps-debug
-	valgrind --leak-check=full ./biceps-debug
+biceps-valgrind : memory-leak
+	valgrind --leak-check=full --track-origins=yes ./biceps-memory-leaks -DTRACE
 
 biceps.o : biceps.c
 	cc -o biceps.o -c biceps.c -Wall -Werror
@@ -31,5 +31,5 @@ cli : cliudp.c
 	cc -o cli cliudp.c -Wall -Werror
 
 clean :
-	rm -f biceps-debug biceps servbeuip cli *.o
+	rm -f biceps-memory-leaks biceps servbeuip cli *.o *.exe
 
