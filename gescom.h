@@ -13,7 +13,7 @@ typedef struct ma_chaine_t{
 typedef struct commande_t{
     char* nom;
     int (*fonc)(int argc, char* argv[]);
-}commande;
+}commande_t;
 
 /* ------------------------------  define + global*/
 
@@ -30,7 +30,7 @@ extern char* Mots[MAX_MOTS]; /* le tableau des mots de la commande */
 extern int NMots; /* nombre de mots de la commande */
 
 #define NBMAXC 10 /* Nb maxi de commandes internes */
-extern commande COMMANDE_INTERNE[NBMAXC];
+extern commande_t COMMANDE_INTERNE[NBMAXC];
 extern int commande_interne_count; /* combien de commandes dans le tableau*/
 
 #define MAX_EXT_BUF 512 // taille pour le buffer retour des commandes externes

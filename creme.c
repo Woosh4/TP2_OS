@@ -9,6 +9,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <pthread.h>
+#include <arpa/inet.h>
 
 #include "creme.h"
 
@@ -50,11 +51,12 @@ int beuip_start(int argc, char* argv[]){
 }
 
 int beuip_stop(int argc, char* argv[]){
-    if(!SERVEUR_LANCE) {
+    if(!SERVEUR_LANCE){
         printf("Erreur: serveur pas encore lancé.\n");
         return 1;
     }
-
+    commande('0', NULL, NULL);
+    
     pthread_cancel(TID_SERVEUR);
     pthread_join(TID_SERVEUR, NULL);
     
@@ -73,77 +75,74 @@ void concatener_message(char* destination, int argc, char* argv[], int debut_idx
 }
 
 int mess(int argc, char* argv[]){
-    if(argc < 2){
-        printf("Utilisation: beuip_mess -l\nbeuip_mess all message\nbeuip_mess nom message\n");
+    if(!SERVEUR_LANCE) {
+        printf("Erreur : serveur inactif.\n");
         return 1;
     }
-
-    struct sockaddr_in Sock;
-    struct hostent *h;
-    int sock_fd;
-
-    if((sock_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
-        perror("socket");
-        return 2;
-    }
-    if(!(h=gethostbyname("127.0.0.1"))){
-        perror("127.0.0.1");
-        close(sock_fd);
-        return 3;
-    }
-    bzero(&Sock, sizeof(Sock));
-    Sock.sin_family = AF_INET;
-    bcopy(h->h_addr, &Sock.sin_addr, h->h_length);
-    Sock.sin_port = htons(9998);
-
-    /* arg: -l (liste) */
-    if(argc == 2 && (strcmp(argv[1], "-l") == 0)){
-        // On envoie simplement "3" pour déclencher l'affichage local du serveur
-        if(sendto(sock_fd, "3", 1, 0, (struct sockaddr*)&Sock, sizeof(Sock))==-1){
-            perror("sendto liste");
-        }
-        close(sock_fd);
+    if(argc == 2 && strcmp(argv[1], "-l") == 0){
+        commande('3', NULL, NULL);
         return 0;
     }
-
-    /* arg: all message */
-    if(argc >= 3 && (strcmp(argv[1], "all") == 0)){
+    if(argc >= 3 && strcmp(argv[1], "all") == 0){
         char msg_buf[256];
-        msg_buf[0] = '5';
-        concatener_message(&msg_buf[1], argc, argv, 2);
-
-        if(sendto(sock_fd, msg_buf, 1 + strlen(&msg_buf[1]), 0, (struct sockaddr*)&Sock, sizeof(Sock))==-1){
-            perror("sendto msg all");
-        } else {
-            printf("Envoi à tous OK !\n");
-        }
-        close(sock_fd);
+        concatener_message(msg_buf, argc, argv, 2);
+        commande('5', msg_buf, NULL);
         return 0;
     }
-
-    /* arg: nom message */
-    if(argc >= 3 && (strcmp(argv[1], "all") != 0)){
+    if(argc >= 3 && strcmp(argv[1], "all") != 0){
         char msg_buf[256];
-        msg_buf[0] = '4';
-        
-        strcpy(&msg_buf[1], argv[1]); // Copie du pseudo
-        int index_msg = 1+1 + strlen(argv[1]); // code+\0 + longueur
-        
-        concatener_message(&msg_buf[index_msg], argc, argv, 2);
-        
-        int taille_totale = index_msg + strlen(&msg_buf[index_msg]);
-
-        if(sendto(sock_fd, msg_buf, taille_totale, 0, (struct sockaddr*)&Sock, sizeof(Sock))==-1){
-            perror("sendto msg privé");
-        } else {
-            printf("Envoi privé OK\n");
-        }
-        close(sock_fd);
+        concatener_message(msg_buf, argc, argv, 2);
+        commande('4', msg_buf, argv[1]);
         return 0;
     }
-    
-    // sinon erreur
-    fprintf(stderr, "ERREUR mauvaise utilisation de beuip_mess\n");
-    close(sock_fd);
+    printf("Utilisation invalide de beuip mess: beuip mess [-l; all; nom..]\n");
     return 1;
+}
+
+void commande(char octet1, char * message, char * pseudo){
+    int sock_fd;
+    if((sock_fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
+        perror("socket commande");
+        return;
+    }
+
+    pthread_mutex_lock(&mutex_annuaire);
+    if(octet1 == '3'){ //liste
+        printf("----- ANNUAIRE -----\n");
+        printf("-- PERSONNE -- ADRESSE -- \n");
+        for(int i=0; i<table_wr; ++i){
+            if(table[i].pseudo[0] != '\0'){
+                printf("%s -- %s\n", table[i].pseudo, inet_ntoa(table[i].adresse_ip.sin_addr));
+            }
+        }
+    } 
+    else if (octet1 == '4' || octet1 == '5'){ // Privé ou Broadcast
+        char sendbuf[512];
+        sprintf(sendbuf, "9BEUIP%s", message);
+
+        for(int i=0; i<table_wr; ++i){
+            if(table[i].pseudo[0] != '\0'){
+                if(octet1 == '5' || strcmp(pseudo, table[i].pseudo) == 0) {
+                    sendto(sock_fd, sendbuf, strlen(sendbuf), 0, (struct sockaddr*)&table[i].adresse_ip, sizeof(table[i].adresse_ip));
+                    if(octet1 == '4') break; //message privé: 1 seul
+                }
+            }
+        }
+    }
+    else if(octet1 == '0'){ //beuip stop
+        char deco_msg[] = "0BEUIP";
+        struct sockaddr_in bcast_addr;
+        
+        int broadcast_enable = 1;
+        setsockopt(sock_fd, SOL_SOCKET, SO_BROADCAST, &broadcast_enable, sizeof(broadcast_enable));
+        
+        bcast_addr.sin_family = AF_INET;
+        bcast_addr.sin_port = htons(9998);
+        bcast_addr.sin_addr.s_addr = inet_addr("192.168.88.255"); // broadcast
+        
+        sendto(sock_fd, deco_msg, strlen(deco_msg), 0, (struct sockaddr*)&bcast_addr, sizeof(bcast_addr));
+    }
+
+    pthread_mutex_unlock(&mutex_annuaire);
+    close(sock_fd);
 }

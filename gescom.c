@@ -22,7 +22,7 @@ ma_chaine prompt_main;
 int DTRACE = 0;
 char* Mots[MAX_MOTS];
 int NMots = 0;
-commande COMMANDE_INTERNE[NBMAXC];
+commande_t COMMANDE_INTERNE[NBMAXC];
 int commande_interne_count = 0;
 
 /* ------------------------------  fonctions */
