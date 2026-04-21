@@ -8,15 +8,20 @@
 #include <string.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <pthread.h>
 
 #include "creme.h"
 
 /* ----- Variables globales ----- */
 
 char VERSION_CREME[] = "1.0";
-int pid_serv;
-pid_t PID_SERVEUR = -1; // -1 = serveur OFF
+// int pid_serv;
+// pid_t PID_SERVEUR = -1; // -1 = serveur OFF
 #define LBUF 256
+
+pthread_t TID_SERVEUR;
+int SERVEUR_LANCE = 0;
+char pseudo_serveur[30];
 
 /* ----- fonctions ----- */
 
@@ -25,35 +30,36 @@ int beuip_start(int argc, char* argv[]){
         printf("Utilisation : beuip_start pseudo\n");
         return 1;
     }
-    if(PID_SERVEUR != -1) {
-        printf("Le serveur est déjà lancé (PID: %d).\n", PID_SERVEUR);
+    if(SERVEUR_LANCE) {
+        printf("Le serveur est déjà lancé \n");
         return 1;
     }
-    if((PID_SERVEUR = fork()) == -1){
-        perror("fork serveur");
+
+    // copie pseudo
+    strncpy(pseudo_serveur, argv[1], 29);
+    pseudo_serveur[29] = '\0';
+
+    if(pthread_create(&TID_SERVEUR, NULL, serveur_udp, (void*)pseudo_serveur) != 0){
+        perror("pthread_create serveur");
         return 1;
     }
-    /* fils : lancer serveur */
-    if(PID_SERVEUR == 0){
-        char *args[] = {"./servbeuip", argv[1], NULL}; 
-        execv(args[0], args);
-        /* Si execv réussit, cette ligne n'est jamais atteinte */
-        perror("erreur du lancement du serveur (exécutable servbeuip bien présent?)");
-        exit(1);
-    }
-    /* père */
-    printf("Serveur lancé avec le pseudo '%s'.\n", argv[1]);
+
+    SERVEUR_LANCE = 1;
+    printf("Serveur lancé avec le pseudo '%s'.\n", pseudo_serveur);
     return 0;
 }
 
 int beuip_stop(int argc, char* argv[]){
-    if(PID_SERVEUR == -1) {
-        printf("Erreur serveur pas encore lancé.\n");
+    if(!SERVEUR_LANCE) {
+        printf("Erreur: serveur pas encore lancé.\n");
         return 1;
     }
-    kill(PID_SERVEUR, SIGINT);
-    printf("Arret du serveur (PID: %d).\n", PID_SERVEUR);
-    PID_SERVEUR = -1;
+
+    pthread_cancel(TID_SERVEUR);
+    pthread_join(TID_SERVEUR, NULL);
+    
+    SERVEUR_LANCE = 0;
+    printf("Arret du serveur OK.\n");
     return 0;
 }
 

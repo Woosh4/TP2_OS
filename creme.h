@@ -4,7 +4,10 @@
 
 extern char VERSION_CREME[];
 
-/* lance un fils avec fork pour lancer le serveur avec le pseudo */
+/* pour gérer le thread*/
+extern void* serveur_udp(void* p);
+
+/* lance un fils avec thread pour lancer le serveur avec le pseudo */
 int beuip_start(int argc, char* argv[]);
 
 /* demande au serveur de se déconnecter en utilisant ctrl+c sigint */

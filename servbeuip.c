@@ -13,6 +13,8 @@ socket en mode non connecté */
 #include <netinet/in.h>
 #include <signal.h>
 
+#include <pthread.h>
+
 /* ----- STRUCTURES ----- */
 
 struct personne{
@@ -260,30 +262,37 @@ void disconnect(int signal){
     exit(0);
 }
 
+void cleanup_serveur(void *arg){
+    send_msg_disconnect();
+    if(trace) printf("\nDéconnexion du thread OK.\n");
+}
+
 /* -----*/
 /* ----- MAIN ----- */
 /* -----*/
 
 /* Parametre : nom -DTRACE
 */
-int main(int N, char* P[])
+void* serveur_udp(void* p)
 {
     //pour les codes retours
     int ret;
     char buf[LBUF+1];
     struct sockaddr_in client_sock;
+    char* mon_pseudo = (char*)p;
 
     /* vérifie les arguments du main*/
-    check_arguments(N,P);
+    // check_arguments(N,P);
     /* Lance le serveur + bind au sid en variable globale */
     init_serveur();
     /* init du socket pour les broadcasts */
     init_broadcast_sock();
 
     /* Envoi 1BEUIPNom le broadcast de connexion */
-    envoi_msg_connexion(P[1]);
+    envoi_msg_connexion(mon_pseudo);
     /* si ctrl+C : message broadcast 0 puis quitter */
-    signal(SIGINT, disconnect);
+    // signal(SIGINT, disconnect);
+    pthread_cleanup_push(cleanup_serveur, NULL);
 
     /* Lecture des messages */
     if(trace) printf("Ctrl+C pour quitter, début d'écoute.\n");
@@ -291,12 +300,14 @@ int main(int N, char* P[])
         socklen_t sockaddr_taille = sizeof(client_sock);
         if((ret = recvfrom(sid, (void*)buf, LBUF, 0, (struct sockaddr*)&client_sock, &sockaddr_taille)) < 0){
             perror("recvfrom");
-            return 4;
+            break;
         }
 
-        traiter_message_recu(buf, ret, client_sock, P[1]);
+        traiter_message_recu(buf, ret, client_sock, mon_pseudo);
     } while(1);
     
-    if(trace) printf("Fin du programme.\n");
-    return 0;
+    // if(trace) printf("Fin du programme.\n");
+    // return 0;
+    pthread_cleanup_pop(1);
+    return NULL;
 }
