@@ -107,27 +107,27 @@ void commande(char octet1, char * message, char * pseudo){
         return;
     }
 
-    pthread_mutex_lock(&mutex_annuaire);
     if(octet1 == '3'){ //liste
-        printf("----- ANNUAIRE -----\n");
-        printf("-- PERSONNE -- ADRESSE -- \n");
-        for(int i=0; i<table_wr; ++i){
-            if(table[i].pseudo[0] != '\0'){
-                printf("%s -- %s\n", table[i].pseudo, inet_ntoa(table[i].adresse_ip.sin_addr));
-            }
-        }
+        listeElts();
     } 
     else if (octet1 == '4'){ // Privé
         char sendbuf[512];
         sprintf(sendbuf, "9BEUIP%s", message);
 
-        for(int i=0; i<table_wr; ++i){
-            if(table[i].pseudo[0] != '\0'){
-                if(strcmp(pseudo, table[i].pseudo) == 0) {
-                    sendto(sock_fd, sendbuf, strlen(sendbuf), 0, (struct sockaddr*)&table[i].adresse_ip, sizeof(table[i].adresse_ip));
-                    break; //message privé: 1 seul
-                }
-            }
+        pthread_mutex_lock(&mutex_annuaire);
+        struct elt* el = trouveEltnom(pseudo);
+        
+        if (el == NULL) {
+            printf("Erreur : l'utilisateur '%s' n'est pas dans l'annuaire.\n", pseudo);
+            pthread_mutex_unlock(&mutex_annuaire);
+        } else {
+            struct sockaddr_in dest;
+            dest.sin_family = AF_INET;
+            dest.sin_port = htons(9998);
+            dest.sin_addr.s_addr = inet_addr(el->adip);
+            
+            sendto(sock_fd, sendbuf, strlen(sendbuf), 0, (struct sockaddr*)&dest, sizeof(dest));
+            pthread_mutex_unlock(&mutex_annuaire);
         }
     }
     else if (octet1 == '0') { //beuip stop
@@ -140,6 +140,5 @@ void commande(char octet1, char * message, char * pseudo){
         diffuser_broadcast_dynamique(sock_fd, sendbuf, 9998);
     }
 
-    pthread_mutex_unlock(&mutex_annuaire);
     close(sock_fd);
 }

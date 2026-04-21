@@ -22,8 +22,7 @@ socket en mode non connecté */
 
 /* ---- vraiables globales ----*/
 
-struct personne table[TABLE_TAILLE];
-int table_wr = 0;
+struct elt * annuaire_head = NULL;
 pthread_mutex_t mutex_annuaire = PTHREAD_MUTEX_INITIALIZER;
 
 int sid;
@@ -57,50 +56,6 @@ void envoi_msg_connexion(const char* mon_pseudo) {
     diffuser_broadcast_dynamique(sid, buf, PORT);
 }
 
-void affiche_liste(){
-    printf("----- ANNUAIRE -----\n");
-    printf("-- PERSONNE -- ADRESSE -- \n");
-    pthread_mutex_lock(&mutex_annuaire);
-    for(int i=0; i<table_wr; ++i){
-        printf("%s --- %s\n", table[i].pseudo, inet_ntoa(table[i].adresse_ip.sin_addr));
-    }
-    pthread_mutex_unlock(&mutex_annuaire);
-}
-
-void ajouter_personne(const char* pseudo, struct sockaddr_in client_sock) {
-    if(table_wr >= TABLE_TAILLE) return;
-    
-    int connu = 0;
-    pthread_mutex_lock(&mutex_annuaire);
-    for(int i=0; i<table_wr; ++i){
-        if(table[i].adresse_ip.sin_addr.s_addr == client_sock.sin_addr.s_addr){
-            connu = 1;
-            if(trace) printf("Personne connue: %s\n", table[i].pseudo);
-            break;
-        }
-    }
-    if(!connu){
-        strcpy(table[table_wr].pseudo, pseudo);
-        table[table_wr].adresse_ip = client_sock;
-        if(trace) printf("Nouvel utilisateur : numéro %d, nom: %s, adresse %s\n", table_wr, table[table_wr].pseudo, inet_ntoa(client_sock.sin_addr));
-        ++table_wr;
-    }
-    pthread_mutex_unlock(&mutex_annuaire);
-}
-
-void retirer_personne(struct sockaddr_in client_sock) {
-    pthread_mutex_lock(&mutex_annuaire);
-    for(int i=0; i<table_wr; ++i){
-        if(table[i].adresse_ip.sin_addr.s_addr == client_sock.sin_addr.s_addr){
-            if(trace) printf("%s s'est déconnecté.\n", table[i].pseudo);
-            memset(&table[i].pseudo, '\0', sizeof(table[i].pseudo)); 
-            memset(&table[i].adresse_ip, 0, sizeof(table[i].adresse_ip)); 
-            break; // Une seule adresse correspondante
-        }
-    }
-    pthread_mutex_unlock(&mutex_annuaire);
-}
-
 void repondre_ack(struct sockaddr_in client_sock, const char* mon_pseudo) {
     char ack_msg[LBUF];
     sprintf(ack_msg, "2BEUIP%s", mon_pseudo);
@@ -111,18 +66,40 @@ void repondre_ack(struct sockaddr_in client_sock, const char* mon_pseudo) {
 
 void gerer_reception_prive(const char* buf, struct sockaddr_in client_sock) {
     pthread_mutex_lock(&mutex_annuaire);
-    for(int i=0; i<table_wr; ++i){
-        if(table[i].adresse_ip.sin_addr.s_addr == client_sock.sin_addr.s_addr && table[i].pseudo[0] != '\0'){
-            printf("Message de %s : %s", table[i].pseudo, &buf[6]);
+    struct elt * curr = annuaire_head;
+    while (curr != NULL) {
+        if (inet_ntoa(client_sock.sin_addr) == curr->adip){
+            printf("Message de %s : %s", curr->nom, &buf[6]);
             pthread_mutex_unlock(&mutex_annuaire);
             return;
         }
-    }
+        curr = curr->next; // On avance dans la liste
+    }   
     pthread_mutex_unlock(&mutex_annuaire);
     printf("ERREUR: expéditeur du message privé non trouvé dans l'annuaire\n");
 }
 
-void traiter_message_recu(char* buf, int ret, struct sockaddr_in client_sock, const char* mon_pseudo) {
+int est_ip_locale(struct sockaddr_in client_sock) {
+    struct ifaddrs *ifaddr, *ifa;
+    if (getifaddrs(&ifaddr) == -1) return 0;
+    
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != AF_INET) continue;
+        
+        struct sockaddr_in * addr = (struct sockaddr_in *)ifa->ifa_addr;
+        if (addr->sin_addr.s_addr == client_sock.sin_addr.s_addr) {
+            freeifaddrs(ifaddr);
+            return 1; //locale
+        }
+    }
+    freeifaddrs(ifaddr);
+    return 0;
+}
+
+void traiter_message_recu(char* buf, int ret, struct sockaddr_in client_sock, const char* mon_pseudo){
+    if (est_ip_locale(client_sock)) {
+        return; //rien à faire
+    }
     buf[ret] = '\0';
     char code = buf[0];
 
@@ -134,16 +111,16 @@ void traiter_message_recu(char* buf, int ret, struct sockaddr_in client_sock, co
 
     // màj de l'annuaire si le message est correct
     if(strncmp(&buf[1], "BEUIP", 5) == 0){
-        ajouter_personne(&buf[6], client_sock);
+        ajouteElt(&buf[6], inet_ntoa(client_sock.sin_addr));
     }
 
     // choix de l'action suivant le code
     switch(code){
         case '0':
-            retirer_personne(client_sock);
+            supprimeElt(inet_ntoa(client_sock.sin_addr));
             break;
         case '1':
-            // géré par ajouter_personne
+            // géré par ajouterElt
             break;
         case '2':
             // ack, rien à faire
@@ -185,8 +162,14 @@ void* serveur_udp(void* p){
             perror("recvfrom");
             break;
         }
+        int old_state;
+        //blocage de la fermeture pour pouvoir traiter le message
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state);
 
         traiter_message_recu(buf, ret, client_sock, mon_pseudo);
+
+        //déblocage jusqu'à réception d'un nouveau message
+        pthread_setcancelstate(old_state, NULL);
     } while(1);
     
     pthread_cleanup_pop(1);
@@ -233,4 +216,120 @@ void diffuser_broadcast_dynamique(int sock_fd, const char* message, int port_des
         }
     }
     freeifaddrs(ifaddr); 
+}
+
+void ajouteElt(char * pseudo, char * adip) {
+    pthread_mutex_lock(&mutex_annuaire);
+
+    struct elt * curr = annuaire_head;
+    struct elt * prev = NULL;
+
+    while (curr != NULL) {
+        int cmp = strcmp(curr->nom, pseudo);
+        
+        if (cmp == 0 || strcmp(curr->adip, adip) == 0) {
+            // Pseudo ou IP déjà connu, on ne fait rien
+            pthread_mutex_unlock(&mutex_annuaire);
+            return;
+        }
+        
+        if (cmp > 0) {
+            break;
+        }
+
+        prev = curr;
+        curr = curr->next;
+    }
+
+    struct elt * nouveau = (struct elt *)malloc(sizeof(struct elt));
+    if (nouveau == NULL) {
+        perror("malloc ajouteElt");
+        pthread_mutex_unlock(&mutex_annuaire);
+        return;
+    }
+    
+    strncpy(nouveau->nom, pseudo, LPSEUDO);
+    nouveau->nom[LPSEUDO] = '\0';
+    strncpy(nouveau->adip, adip, 15);
+    nouveau->adip[15] = '\0';
+
+    nouveau->next = curr;
+    if (prev == NULL) {
+        annuaire_head = nouveau;
+    } else {
+        prev->next = nouveau;
+    }
+
+    if(trace) printf("Nouvel utilisateur ajouté : %s (%s)\n", nouveau->nom, nouveau->adip);
+    pthread_mutex_unlock(&mutex_annuaire);
+}
+
+void supprimeElt(char * adip){
+    pthread_mutex_lock(&mutex_annuaire);
+    
+    struct elt * curr = annuaire_head;
+    struct elt * prev = NULL;
+
+    while (curr != NULL) {
+        if (strcmp(curr->adip, adip) == 0) {
+            if(trace) printf("%s s'est déconnecté.\n", curr->nom);
+            
+            if (prev == NULL) {
+                annuaire_head = curr->next;
+            }
+            else {
+                prev->next = curr->next;
+            }
+            
+            free(curr);
+            break;
+        }
+        prev = curr;
+        curr = curr->next;
+    }
+    
+    pthread_mutex_unlock(&mutex_annuaire);
+}
+
+void listeElts(void) {
+    pthread_mutex_lock(&mutex_annuaire);
+    printf("----- ANNUAIRE -----\n");
+    printf("-- PERSONNE -- ADRESSE -- \n");
+    
+    struct elt * curr = annuaire_head;
+    while (curr != NULL) {
+        printf("%s --- %s\n", curr->nom, curr->adip);
+        curr = curr->next;
+    }
+    
+    pthread_mutex_unlock(&mutex_annuaire);
+}
+
+struct elt* trouveEltnom(char* pseudo){
+    struct elt * curr = annuaire_head;
+    while (curr != NULL) {
+        if (strcmp(pseudo, curr->nom) == 0){
+            return curr;
+        }
+        curr = curr->next; // On avance dans la liste
+    }
+    return NULL;
+}
+
+void liberer_annuaire(void) {
+    pthread_mutex_lock(&mutex_annuaire); 
+    
+    struct elt * curr = annuaire_head;
+    struct elt * suivant = NULL;
+
+    while (curr != NULL) {
+        suivant = curr->next;
+        free(curr);          
+        curr = suivant;      
+    }
+    
+    annuaire_head = NULL;
+    
+    pthread_mutex_unlock(&mutex_annuaire);
+    if(trace) printf("Annuaire vidé\n");
 }

@@ -10,8 +10,10 @@
 #include <sys/wait.h>
 
 #include <signal.h>
+
 #include "gescom.h"
 #include "creme.h"
+#include "servbeuip.h"
 
 /* ------------------------------ définition variables globales*/
 
@@ -123,7 +125,7 @@ int Sortie(int N, char *P[]){
         printf("\nFermeture automatique du serveur UDP\n");
         beuip_stop(0, NULL);
     }
-
+    liberer_annuaire();
     destroy_prompt(&prompt_main);
     destroy_Com_Int();
     printf("\nSortie Réussie!\n");

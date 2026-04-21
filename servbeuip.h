@@ -38,10 +38,17 @@ struct personne{
 
 #define LBUF 256
 #define PORT 9998
-#define TABLE_TAILLE 255
 
-extern struct personne table[TABLE_TAILLE];
-extern int table_wr;
+
+/* le chainage des couples (pseudo, IPV4) */
+#define LPSEUDO 23 /* longueur maxi du pseudo */
+struct elt { /* stucture d'un element */
+char nom[LPSEUDO+1]; /* nom de l'element */
+char adip[16]; /* IPv4 de l'element */
+struct elt * next; /* adresse du prochain element */
+};
+
+extern struct elt * annuaire_head;
 extern pthread_mutex_t mutex_annuaire;
 
 extern int sid;
@@ -58,19 +65,13 @@ void init_serveur();
 /* Envoie le message de connexion 1BEUIPNom */
 void envoi_msg_connexion(const char* mon_pseudo);
 
-void affiche_liste();
-
-/* ajouter une nouvelle personne à l'annuaire, pseudo + ip*/
-void ajouter_personne(const char* pseudo, struct sockaddr_in client_sock);
-
-/* retire une personne de l'annuaire en passant par son IP */
-void retirer_personne(struct sockaddr_in client_sock);
-
 /* envoie le message ack 2BEUIP avec mon pseudo ensuite au socket */
 void repondre_ack(struct sockaddr_in client_sock, const char* mon_pseudo);
 
 /* code 9 : réception d'un message privé */
 void gerer_reception_prive(const char* buf, struct sockaddr_in client_sock);
+
+int est_ip_locale(struct sockaddr_in client_sock);
 
 /* lance les fonctions suivant le code du message et si il est local ou non */
 void traiter_message_recu(char* buf, int ret, struct sockaddr_in client_sock, const char* mon_pseudo);
@@ -81,4 +82,17 @@ void* serveur_udp(void* p);
 
 void diffuser_broadcast_dynamique(int sock_fd, const char* message, int port_dest);
 
+/* Ajoute un élément par ordre alphabétique croissant du pseudo */
+void ajouteElt(char * pseudo, char * adip);
+
+/* Retire un élément en cherchant son IP, libère la mémoire */
+void supprimeElt(char * adip);
+
+/* Affichage utilisé par creme.c */
+void listeElts(void);
+
+/* retourne l'élément avec le bon pseudo*/
+struct elt* trouveEltnom(char* pseudo);
+
+void liberer_annuaire(void);
 #endif
