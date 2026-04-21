@@ -15,69 +15,20 @@ socket en mode non connecté */
 
 #include <pthread.h>
 
-/* ----- STRUCTURES ----- */
+#include <ifaddrs.h>
+#include <netdb.h>
 
-struct message{
-    unsigned char code;
-    char beuip[6];
-    char nom[30];
-};
+#include "servbeuip.h"
 
-struct personne{
-    char pseudo[30];
-    struct sockaddr_in adresse_ip;
-};
+/* ---- vraiables globales ----*/
 
-/* -----*/
-/* ----- DEFINE ET VARIABLES GLOBALES ----- */
-/* -----*/
-
-#define LBUF 256
-#define PORT 9998
-
-#define TABLE_TAILLE 255
 struct personne table[TABLE_TAILLE];
 int table_wr = 0;
 pthread_mutex_t mutex_annuaire = PTHREAD_MUTEX_INITIALIZER;
 
 int sid;
-struct sockaddr_in broadcast_sock;
-#define BROADCAST_ADDR "192.168.88.255"
+int trace = 0;
 
-int trace = 0; // pour print debug, activé avec -DTRACE en lançant le programme
-
-/* -----*/
-/* ----- FONCTIONS ----- */
-/* -----*/
-
-/* vérifier les arguments du main */
-void check_arguments(int N, char* P[]){
-    if(N != 2 && N != 3)
-    {
-        fprintf(stderr, "Utilisation: %s pseudo -DTRACE.\n", P[0]);
-        exit(1);
-    }
-    if(N == 3 && strcmp(P[2], "-DTRACE")==0){
-        trace = 1;
-        printf("Mode Trace activé !\n");
-    }
-}
-
-// initialise le broadcast socket (variable globale)
-void init_broadcast_sock(){
-    bzero(&broadcast_sock, sizeof(broadcast_sock));
-    broadcast_sock.sin_family = AF_INET;
-    broadcast_sock.sin_port = htons(PORT);
-    broadcast_sock.sin_addr.s_addr = inet_addr(BROADCAST_ADDR);
-    int broadcast_enable = 1;
-    if(setsockopt(sid, SOL_SOCKET, SO_BROADCAST, &broadcast_enable, sizeof(broadcast_enable)) == -1){
-        perror("setsockopt broadcast");
-        exit(3);
-    }
-}
-
-/* initialise le socket pour le serveur et fais le lien au fd,
-en utilisant la variable globale sid */
 void init_serveur() {
     struct sockaddr_in serveur_sock;
     if((sid = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
@@ -97,25 +48,13 @@ void init_serveur() {
     printf("Le serveur est attaché au port %d\n", PORT);
 }
 
-/* Envoie le message de connexion 1BEUIPNom */
 void envoi_msg_connexion(const char* mon_pseudo) {
     char buf[LBUF+1];
-    sprintf(buf, "1BEUIP");
-    strcpy(&buf[6], mon_pseudo);
-    if(trace) printf("buf pour envoi = %s\n", buf);
+    sprintf(buf, "1BEUIP%s", mon_pseudo);
+    
+    if(trace) printf("buf pour envoi connexion = %s\n", buf);
 
-    if(sendto(sid, buf, 6+strlen(mon_pseudo), 0, (struct sockaddr*) &broadcast_sock, sizeof(broadcast_sock)) == -1){
-        perror("sendto broadcast connexion");
-    }
-}
-
-// envoie en broadcast le message de déconexion "0BEUIP"
-void send_msg_disconnect(){
-    int ret;
-    char msg_deco[] = "0BEUIP";
-    if((ret = sendto(sid, msg_deco, sizeof(msg_deco), 0, (struct sockaddr*) &broadcast_sock, sizeof(broadcast_sock))) == -1){
-        perror("sendto broadcast");
-    }
+    diffuser_broadcast_dynamique(sid, buf, PORT);
 }
 
 void affiche_liste(){
@@ -128,7 +67,6 @@ void affiche_liste(){
     pthread_mutex_unlock(&mutex_annuaire);
 }
 
-/* ajouter une nouvelle personne à l'annuaire, pseudo + ip*/
 void ajouter_personne(const char* pseudo, struct sockaddr_in client_sock) {
     if(table_wr >= TABLE_TAILLE) return;
     
@@ -150,7 +88,6 @@ void ajouter_personne(const char* pseudo, struct sockaddr_in client_sock) {
     pthread_mutex_unlock(&mutex_annuaire);
 }
 
-/* retire une personne de l'annuaire en passant par son IP */
 void retirer_personne(struct sockaddr_in client_sock) {
     pthread_mutex_lock(&mutex_annuaire);
     for(int i=0; i<table_wr; ++i){
@@ -164,7 +101,6 @@ void retirer_personne(struct sockaddr_in client_sock) {
     pthread_mutex_unlock(&mutex_annuaire);
 }
 
-/* envoie le message ack 2BEUIP avec mon pseudo ensuite au socket */
 void repondre_ack(struct sockaddr_in client_sock, const char* mon_pseudo) {
     char ack_msg[LBUF];
     sprintf(ack_msg, "2BEUIP%s", mon_pseudo);
@@ -173,37 +109,6 @@ void repondre_ack(struct sockaddr_in client_sock, const char* mon_pseudo) {
     }
 }
 
-/* gère le code 4 : demande d'envoi de message privé*/
-void gerer_envoi_prive_local(const char* buf) {
-    int mess_id = -1;
-    /* messages du type DESTINATAIRE\0MESSAGE */
-    for(int i=0; i<LBUF; ++i){
-        if(buf[i] == '\0'){
-            mess_id = i+1;
-            break;
-        }
-    }
-    if(mess_id == -1) {
-        printf("ERREUR recherche message code 4\n");
-        return;
-    }
-
-    pthread_mutex_lock(&mutex_annuaire);
-    for(int i=0; i<table_wr; ++i){
-        if(strcmp(&buf[1], table[i].pseudo) == 0){
-            if(trace) printf("Message transféré à %s : %s", &buf[1], &buf[mess_id]);
-            char sendbuf[LBUF+7];
-            sprintf(sendbuf, "9BEUIP%s", &buf[mess_id]);
-            sendto(sid, sendbuf, strlen(sendbuf), 0, (struct sockaddr*)&table[i].adresse_ip, sizeof(table[i].adresse_ip));
-            pthread_mutex_unlock(&mutex_annuaire);
-            return; 
-        }
-    }
-    pthread_mutex_unlock(&mutex_annuaire);
-    printf("Utilisateur non trouvé dans l'annuaire.\n");
-}
-
-/* code 9 : réception d'un message privé */
 void gerer_reception_prive(const char* buf, struct sockaddr_in client_sock) {
     pthread_mutex_lock(&mutex_annuaire);
     for(int i=0; i<table_wr; ++i){
@@ -217,19 +122,6 @@ void gerer_reception_prive(const char* buf, struct sockaddr_in client_sock) {
     printf("ERREUR: expéditeur du message privé non trouvé dans l'annuaire\n");
 }
 
-/* code 5 + local : demande d'envoi d'un message à tous, en broadcast */
-void diffuser_message_local(const char* buf) {
-    if(trace) printf("Envoi du message à tout le monde : %s\n", &buf[1]);
-    pthread_mutex_lock(&mutex_annuaire);
-    for(int i=0; i<table_wr; ++i){
-        if (table[i].pseudo[0] != '\0') {
-            sendto(sid, &buf[1], strlen(&buf[1]), 0, (struct sockaddr*)&table[i].adresse_ip, sizeof(table[i].adresse_ip));
-        }
-    }
-    pthread_mutex_unlock(&mutex_annuaire);
-}
-
-/* lance les fonctions suivant le code du message et si il est local ou non */
 void traiter_message_recu(char* buf, int ret, struct sockaddr_in client_sock, const char* mon_pseudo) {
     buf[ret] = '\0';
     char code = buf[0];
@@ -267,43 +159,22 @@ void traiter_message_recu(char* buf, int ret, struct sockaddr_in client_sock, co
     printf("\n- - - - - - - - - -\n");
 }
 
-/* fonction de déconnexion reliée au signal sigint */
-void disconnect(int signal){
-    send_msg_disconnect();
-    if(trace) printf("\nDéconnexion OK.\n");
-    exit(0);
-}
-
 void cleanup_serveur(void *arg){
-    send_msg_disconnect();
-    if(trace) printf("\nDéconnexion du thread OK.\n");
+    close(sid);
+    if(trace) printf("\nArrêt du thread serveur et fermeture du port OK.\n");
 }
 
-/* -----*/
-/* ----- MAIN ----- */
-/* -----*/
-
-/* Parametre : nom -DTRACE
-*/
-void* serveur_udp(void* p)
-{
+void* serveur_udp(void* p){
     //pour les codes retours
     int ret;
     char buf[LBUF+1];
     struct sockaddr_in client_sock;
     char* mon_pseudo = (char*)p;
 
-    /* vérifie les arguments du main*/
-    // check_arguments(N,P);
-    /* Lance le serveur + bind au sid en variable globale */
     init_serveur();
-    /* init du socket pour les broadcasts */
-    init_broadcast_sock();
-
-    /* Envoi 1BEUIPNom le broadcast de connexion */
     envoi_msg_connexion(mon_pseudo);
-    /* si ctrl+C : message broadcast 0 puis quitter */
-    // signal(SIGINT, disconnect);
+
+    // pour gérer le cleanup à fin du thread
     pthread_cleanup_push(cleanup_serveur, NULL);
 
     /* Lecture des messages */
@@ -318,8 +189,48 @@ void* serveur_udp(void* p)
         traiter_message_recu(buf, ret, client_sock, mon_pseudo);
     } while(1);
     
-    // if(trace) printf("Fin du programme.\n");
-    // return 0;
     pthread_cleanup_pop(1);
     return NULL;
+}
+
+void diffuser_broadcast_dynamique(int sock_fd, const char* message, int port_dest){
+    struct ifaddrs *ifaddr, *ifa;
+    char host[NI_MAXHOST];
+
+    int broadcast_enable = 1;
+    setsockopt(sock_fd, SOL_SOCKET, SO_BROADCAST, &broadcast_enable, sizeof(broadcast_enable));
+
+    //récupérer liste des interfaces
+    if(getifaddrs(&ifaddr) == -1){
+        perror("getifaddrs");
+        return;
+    }
+
+    for(ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next){
+        //enlever les interfaces sans adresses ou sans adresses de broadcast
+        if(ifa->ifa_addr == NULL || ifa->ifa_broadaddr == NULL){
+            continue;
+        }
+        //ne garder que ipv4
+        if(ifa->ifa_addr->sa_family == AF_INET){
+            
+            //extraction de l'adresse de broadcast sous forme de chaîne ("192.168.1.255")
+            int s = getnameinfo(ifa->ifa_broadaddr, sizeof(struct sockaddr_in), host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
+            
+            if(s == 0){
+                //pas localhost
+                if(strcmp(host, "127.0.0.1") != 0){
+                    
+                    struct sockaddr_in bcast_addr;
+                    bcast_addr.sin_family = AF_INET;
+                    bcast_addr.sin_port = htons(port_dest);
+                    bcast_addr.sin_addr.s_addr = inet_addr(host);
+
+                    sendto(sock_fd, message, strlen(message), 0, (struct sockaddr*)&bcast_addr, sizeof(bcast_addr));
+                    // printf("Broadcast envoyé sur %s (adresse: %s)\n", ifa->ifa_name, host);
+                }
+            }
+        }
+    }
+    freeifaddrs(ifaddr); 
 }

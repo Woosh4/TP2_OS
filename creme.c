@@ -12,6 +12,7 @@
 #include <arpa/inet.h>
 
 #include "creme.h"
+#include "servbeuip.h"
 
 /* ----- Variables globales ----- */
 
@@ -116,31 +117,27 @@ void commande(char octet1, char * message, char * pseudo){
             }
         }
     } 
-    else if (octet1 == '4' || octet1 == '5'){ // Privé ou Broadcast
+    else if (octet1 == '4'){ // Privé
         char sendbuf[512];
         sprintf(sendbuf, "9BEUIP%s", message);
 
         for(int i=0; i<table_wr; ++i){
             if(table[i].pseudo[0] != '\0'){
-                if(octet1 == '5' || strcmp(pseudo, table[i].pseudo) == 0) {
+                if(strcmp(pseudo, table[i].pseudo) == 0) {
                     sendto(sock_fd, sendbuf, strlen(sendbuf), 0, (struct sockaddr*)&table[i].adresse_ip, sizeof(table[i].adresse_ip));
-                    if(octet1 == '4') break; //message privé: 1 seul
+                    break; //message privé: 1 seul
                 }
             }
         }
     }
-    else if(octet1 == '0'){ //beuip stop
+    else if (octet1 == '0') { //beuip stop
         char deco_msg[] = "0BEUIP";
-        struct sockaddr_in bcast_addr;
-        
-        int broadcast_enable = 1;
-        setsockopt(sock_fd, SOL_SOCKET, SO_BROADCAST, &broadcast_enable, sizeof(broadcast_enable));
-        
-        bcast_addr.sin_family = AF_INET;
-        bcast_addr.sin_port = htons(9998);
-        bcast_addr.sin_addr.s_addr = inet_addr("192.168.88.255"); // broadcast
-        
-        sendto(sock_fd, deco_msg, strlen(deco_msg), 0, (struct sockaddr*)&bcast_addr, sizeof(bcast_addr));
+        diffuser_broadcast_dynamique(sock_fd, deco_msg, 9998);
+    }
+    else if (octet1 == '5') { //beuip mess all
+        char sendbuf[512];
+        sprintf(sendbuf, "9BEUIP%s", message);
+        diffuser_broadcast_dynamique(sock_fd, sendbuf, 9998);
     }
 
     pthread_mutex_unlock(&mutex_annuaire);

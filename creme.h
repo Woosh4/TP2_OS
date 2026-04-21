@@ -7,17 +7,6 @@
 
 extern char VERSION_CREME[];
 
-struct personne{
-    char pseudo[30];
-    struct sockaddr_in adresse_ip;
-};
-
-#define TABLE_TAILLE 255
-extern struct personne table[TABLE_TAILLE];
-extern int table_wr;
-extern pthread_mutex_t mutex_annuaire;
-
-
 /* pour gérer le thread*/
 extern void* serveur_udp(void* p);
 
@@ -36,4 +25,7 @@ int mess(int argc, char* argv[]);
 
 /* pour gérer les commandes internes */
 void commande(char octet1, char * message, char * pseudo);
+
+/* gestion dynamique des interfaces de réseau*/
+void diffuser_broadcast_dynamique(int sock_fd, const char* message, int port_dest);
 #endif
