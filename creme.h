@@ -7,6 +7,8 @@
 
 extern char VERSION_CREME[];
 
+extern int SERVEUR_LANCE;
+
 /* pour gérer le thread*/
 extern void* serveur_udp(void* p);
 

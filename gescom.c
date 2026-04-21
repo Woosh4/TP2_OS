@@ -118,6 +118,12 @@ void set_version_biceps(char* version_biceps){
 
 /* Fais tous les free nécessaires puis quitte le programme */
 int Sortie(int N, char *P[]){
+    // fermeture automatique du serveur si l'utilisateur ne l'a pas fait
+    if (SERVEUR_LANCE) {
+        printf("\nFermeture automatique du serveur UDP\n");
+        beuip_stop(0, NULL);
+    }
+
     destroy_prompt(&prompt_main);
     destroy_Com_Int();
     printf("\nSortie Réussie!\n");
