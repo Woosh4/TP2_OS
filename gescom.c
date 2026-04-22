@@ -167,6 +167,14 @@ void beuip_comm(int N, char* P[]) {
         }
         return;
     }
+    if (strcmp(P[1], "get") == 0) {
+        if (N < 4) {
+            printf("Utilisation : beuip get pseudo nomfic\n");
+        } else {
+            demandeFichier(P[2], P[3]);
+        }
+        return;
+    }
 
     printf("Commande beuip inconnue : '%s'\n", P[1]);
 }

@@ -33,4 +33,6 @@ void diffuser_broadcast_dynamique(int sock_fd, const char* message, int port_des
 
 /* TCP: demander la liste des fichiers du pseudo*/
 void demandeListe(char * pseudo);
+
+void demandeFichier(char * pseudo, char * nomfic);
 #endif

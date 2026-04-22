@@ -11,6 +11,8 @@
 #include <pthread.h>
 #include <arpa/inet.h>
 
+#include <fcntl.h>
+
 #include "creme.h"
 #include "servbeuip.h"
 
@@ -202,4 +204,85 @@ void demandeListe(char * pseudo) {
     
     printf("------------------------\n");
     close(sockfd);
+}
+
+void demandeFichier(char * pseudo, char * nomfic) {
+    char local_path[512];
+    snprintf(local_path, sizeof(local_path), "reppub/%s", nomfic);
+
+    // verif si fichier existe localement
+    if (access(local_path, F_OK) == 0) {
+        printf("Erreur : Le fichier '%s' existe déjà dans le répertoire local.\n", local_path);
+        return;
+    }
+
+    char ip_dest[16];
+    
+    pthread_mutex_lock(&mutex_annuaire);
+    struct elt* el = trouveEltnom(pseudo);
+    if (el == NULL) {
+        printf("Erreur : l'utilisateur '%s' n'est pas dans l'annuaire.\n", pseudo);
+        pthread_mutex_unlock(&mutex_annuaire);
+        return;
+    }
+    strcpy(ip_dest, el->adip);
+    pthread_mutex_unlock(&mutex_annuaire);
+
+    int sockfd;
+    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        perror("socket TCP client");
+        return;
+    }
+
+    struct sockaddr_in dest;
+    dest.sin_family = AF_INET;
+    dest.sin_port = htons(9998);
+    dest.sin_addr.s_addr = inet_addr(ip_dest);
+
+    if (connect(sockfd, (struct sockaddr*)&dest, sizeof(dest)) < 0) {
+        perror("connect TCP (serveur bien lancé ?)");
+        close(sockfd);
+        return;
+    }
+
+    // envoi de la requête ("Fnomfichier\n")
+    char req[512];
+    int req_len = snprintf(req, sizeof(req), "F%s\n", nomfic);
+    if (write(sockfd, req, req_len) != req_len) {
+        perror("write TCP requête");
+        close(sockfd);
+        return;
+    }
+
+    // Ouverture du fichier local pour écriture (Création + Vidage si besoin, permissions 0644)
+    int fd_out = open(local_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd_out < 0) {
+        perror("Erreur création fichier local");
+        close(sockfd);
+        return;
+    }
+
+    // Lecture du réseau et écriture dans le fichier
+    char buf[1024];
+    int n;
+    int total_bytes = 0;
+    
+    while ((n = read(sockfd, buf, sizeof(buf))) > 0) {
+        if (write(fd_out, buf, n) != n) {
+            perror("Erreur écriture fichier local");
+            break;
+        }
+        total_bytes += n;
+    }
+
+    close(fd_out);
+    close(sockfd);
+
+    // si == 0 : c'est un close(), pas de fichier
+    if (total_bytes == 0) {
+        printf("Erreur : Le fichier '%s' est introuvable sur le serveur de %s.\n", nomfic, pseudo);
+        unlink(local_path); // On supprime le fichier vide local qu'on vient de créer
+    } else {
+        printf("Téléchargement de '%s' terminé avec succès (%d octets).\n", nomfic, total_bytes);
+    }
 }

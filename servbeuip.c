@@ -19,6 +19,9 @@ socket en mode non connecté */
 #include <netdb.h>
 #include <sys/wait.h>
 
+#include <fcntl.h>
+#include <unistd.h>
+
 #include "servbeuip.h"
 
 /* ---- vraiables globales ----*/
@@ -422,6 +425,52 @@ void envoiContenu(int fd, const char * rep) {
         } 
         else { // père
             //rien à faire: le fils s'en occupe
+            close(fd);
+        }
+    }
+    else if (cmd == 'F') { // commande get
+        char filename[256];
+        int i = 0;
+        char c;
+        
+        while (read(fd, &c, 1) > 0 && c != '\n' && i < 255) {
+            filename[i++] = c;
+        }
+        filename[i] = '\0';
+
+        // pour empecher de remonter l'arborescence
+        if (strstr(filename, "../") != NULL || strchr(filename, '/') != NULL) {
+            printf("Tentative de piratage bloquée : %s\n", filename);
+            close(fd);
+            return;
+        }
+
+        char filepath[512];
+        snprintf(filepath, sizeof(filepath), "%s/%s", rep, filename);
+
+        // verif si fichier distant existe
+        if (access(filepath, R_OK) != 0) {
+            close(fd);
+            return;
+        }
+
+        pid_t pid = fork();
+        if (pid < 0) {
+            perror("fork TCP cat");
+            close(fd);
+            return;
+        }
+
+        if (pid == 0) { //fils
+            dup2(fd, STDOUT_FILENO);
+            dup2(fd, STDERR_FILENO);
+            close(fd);
+            
+            execlp("cat", "cat", filepath, NULL);
+            perror("Erreur execlp cat");
+            exit(1);
+        }
+        else { //père
             close(fd);
         }
     }
