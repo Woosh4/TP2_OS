@@ -72,7 +72,7 @@ void gerer_reception_prive(const char* buf, struct sockaddr_in client_sock) {
     pthread_mutex_lock(&mutex_annuaire);
     struct elt * curr = annuaire_head;
     while (curr != NULL) {
-        if (inet_ntoa(client_sock.sin_addr) == curr->adip){
+        if (strcmp(inet_ntoa(client_sock.sin_addr), curr->adip) == 0){
             printf("Message de %s : %s\n", curr->nom, &buf[6]);
             pthread_mutex_unlock(&mutex_annuaire);
             return;
