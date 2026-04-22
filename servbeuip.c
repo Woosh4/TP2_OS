@@ -119,12 +119,16 @@ void traiter_message_recu(char* buf, int ret, struct sockaddr_in client_sock, co
             supprimeElt(inet_ntoa(client_sock.sin_addr));
             break;
         case '1':
+            // connexion initiale
             if(strncmp(&buf[1], "BEUIP", 5) == 0){
                 ajouteElt(&buf[6], inet_ntoa(client_sock.sin_addr));
             }
             break;
         case '2':
-            // ack, rien à faire
+            // ack, ajout annuaire
+            if(strncmp(&buf[1], "BEUIP", 5) == 0){
+                ajouteElt(&buf[6], inet_ntoa(client_sock.sin_addr));
+            }
             break;
         case '9':
             gerer_reception_prive(buf, client_sock);
