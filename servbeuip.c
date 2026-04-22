@@ -63,7 +63,7 @@ void envoi_msg_connexion(const char* mon_pseudo) {
 void repondre_ack(struct sockaddr_in client_sock, const char* mon_pseudo) {
     char ack_msg[LBUF];
     sprintf(ack_msg, "2BEUIP%s", mon_pseudo);
-    if(sendto(sid, ack_msg, strlen(ack_msg), MSG_CONFIRM, (struct sockaddr*) &client_sock, sizeof(client_sock)) == -1){
+    if(sendto(sid, ack_msg, strlen(ack_msg), 0, (struct sockaddr*) &client_sock, sizeof(client_sock)) == -1){
         perror("sendto ack");
     }
 }

@@ -158,7 +158,7 @@ void beuip_comm(int N, char* P[]) {
         beuip_list(N - 1, P + 1);
         return;
     }
-    if (strcmp(P[1], "mess") == 0) {
+    if (strcmp(P[1], "message") == 0) {
         mess(N - 1, P + 1);
         return;
     }
