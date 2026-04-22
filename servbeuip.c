@@ -73,7 +73,7 @@ void gerer_reception_prive(const char* buf, struct sockaddr_in client_sock) {
     struct elt * curr = annuaire_head;
     while (curr != NULL) {
         if (inet_ntoa(client_sock.sin_addr) == curr->adip){
-            printf("Message de %s : %s", curr->nom, &buf[6]);
+            printf("Message de %s : %s\n", curr->nom, &buf[6]);
             pthread_mutex_unlock(&mutex_annuaire);
             return;
         }
@@ -113,18 +113,15 @@ void traiter_message_recu(char* buf, int ret, struct sockaddr_in client_sock, co
         repondre_ack(client_sock, mon_pseudo);
     }
 
-    // màj de l'annuaire si le message est correct
-    if(strncmp(&buf[1], "BEUIP", 5) == 0){
-        ajouteElt(&buf[6], inet_ntoa(client_sock.sin_addr));
-    }
-
     // choix de l'action suivant le code
     switch(code){
         case '0':
             supprimeElt(inet_ntoa(client_sock.sin_addr));
             break;
         case '1':
-            // géré par ajouterElt
+            if(strncmp(&buf[1], "BEUIP", 5) == 0){
+                ajouteElt(&buf[6], inet_ntoa(client_sock.sin_addr));
+            }
             break;
         case '2':
             // ack, rien à faire
