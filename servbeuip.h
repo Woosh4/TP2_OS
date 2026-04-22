@@ -95,4 +95,10 @@ void listeElts(void);
 struct elt* trouveEltnom(char* pseudo);
 
 void liberer_annuaire(void);
+
+void cleanup_serveur_tcp(void *arg);
+
+/* Le thread du serveur TCP */
+void* serveur_tcp(void* rep);
+
 #endif

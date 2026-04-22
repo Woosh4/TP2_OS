@@ -25,6 +25,9 @@ pthread_t TID_SERVEUR;
 int SERVEUR_LANCE = 0;
 char pseudo_serveur[30];
 
+pthread_t TID_SERVEUR_TCP;
+char REPERTOIRE_PUBLIC[] = "reppub";
+
 /* ----- fonctions ----- */
 
 int beuip_start(int argc, char* argv[]){
@@ -41,8 +44,14 @@ int beuip_start(int argc, char* argv[]){
     strncpy(pseudo_serveur, argv[1], 29);
     pseudo_serveur[29] = '\0';
 
+    //UDP
     if(pthread_create(&TID_SERVEUR, NULL, serveur_udp, (void*)pseudo_serveur) != 0){
         perror("pthread_create serveur");
+        return 1;
+    }
+    //TCP
+    if(pthread_create(&TID_SERVEUR_TCP, NULL, serveur_tcp, (void*)REPERTOIRE_PUBLIC) != 0){
+        perror("pthread_create TCP");
         return 1;
     }
 
@@ -57,12 +66,15 @@ int beuip_stop(int argc, char* argv[]){
         return 1;
     }
     commande('0', NULL, NULL);
-    
+    //demande arret UDP + TCP
     pthread_cancel(TID_SERVEUR);
+    pthread_cancel(TID_SERVEUR_TCP);
+    //attente arret UDP + TCP
     pthread_join(TID_SERVEUR, NULL);
+    pthread_join(TID_SERVEUR_TCP, NULL);
     
     SERVEUR_LANCE = 0;
-    printf("Arret du serveur OK.\n");
+    printf("Arret des serveurs UDP + TCP OK.\n");
     return 0;
 }
 

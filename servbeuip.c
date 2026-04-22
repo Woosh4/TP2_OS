@@ -333,3 +333,58 @@ void liberer_annuaire(void) {
     pthread_mutex_unlock(&mutex_annuaire);
     if(trace) printf("Annuaire vidé\n");
 }
+
+void cleanup_serveur_tcp(void *arg){
+    int *listen_fd = (int *)arg;
+    close(*listen_fd);
+    if(trace) printf("\nArrêt du serveur TCP OK.\n");
+}
+
+void* serveur_tcp(void * rep){
+    char * directory = (char *)rep;
+    int listen_fd, conn_fd;
+    struct sockaddr_in servaddr;
+
+    if ((listen_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        perror("socket TCP");
+        return NULL;
+    }
+
+    // pour empecher "address already in use"
+    int opt = 1;
+    setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    // adresse 9998
+    bzero(&servaddr, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port = htons(PORT);
+
+    if (bind(listen_fd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0) {
+        perror("bind TCP");
+        close(listen_fd);
+        return NULL;
+    }
+    
+    // écoute de 5 max en même temps
+    listen(listen_fd, 5); 
+    
+    if(trace) printf("Serveur TCP démarré sur le port %d, partage le dossier: '%s'\n", PORT, directory);
+
+    // pour fermer le socket listen_fd à la fin du thread + autre éventuellement
+    pthread_cleanup_push(cleanup_serveur_tcp, &listen_fd);
+
+    while(1) {
+        conn_fd = accept(listen_fd, (struct sockaddr*)NULL, NULL);
+        if (conn_fd < 0) continue;
+
+        if(trace) printf("Nouvelle connexion TCP acceptée !\n");
+        
+        
+
+        close(conn_fd); 
+    }
+
+    pthread_cleanup_pop(1);
+    return NULL;
+}
