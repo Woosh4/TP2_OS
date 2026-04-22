@@ -80,7 +80,7 @@ void gerer_reception_prive(const char* buf, struct sockaddr_in client_sock) {
         curr = curr->next; // On avance dans la liste
     }   
     pthread_mutex_unlock(&mutex_annuaire);
-    printf("ERREUR: expéditeur du message privé non trouvé dans l'annuaire\n");
+    printf("ERREUR: expéditeur non trouvé. IP reçue: '%s'\n", inet_ntoa(client_sock.sin_addr));
 }
 
 int est_ip_locale(struct sockaddr_in client_sock) {
@@ -138,7 +138,7 @@ void traiter_message_recu(char* buf, int ret, struct sockaddr_in client_sock, co
             break;
     }
     // séparation pour rendre plus lisible
-    printf("\n- - - - - - - - - -\n");
+    printf("- - - - - - - - - -\n");
 }
 
 void cleanup_serveur(void *arg){
@@ -378,8 +378,6 @@ void* serveur_tcp(void * rep){
 
     // pour fermer le socket listen_fd à la fin du thread + autre éventuellement
     pthread_cleanup_push(cleanup_serveur_tcp, &listen_fd);
-    //détruire les zombies
-    signal(SIGCHLD, SIG_IGN);
     while(1) {
         conn_fd = accept(listen_fd, (struct sockaddr*)NULL, NULL);
         if (conn_fd < 0) continue;
@@ -414,18 +412,20 @@ void envoiContenu(int fd, const char * rep) {
 
         if (pid == 0) { // fils
             // Redirection de la sortie standard et d'erreur vers le socket
-            dup2(fd, STDOUT_FILENO);
-            dup2(fd, STDERR_FILENO);
+            dup2(fd, 1); //stdout
+            dup2(fd, 2); //stderr
             close(fd);
 
             // Exécution de ls -l sur le répertoire
-            execlp("ls", "ls", "-l", rep, NULL);
+            execlp("/bin/ls", "ls", "-l", rep, NULL);
             
             perror("Erreur execlp ls");
             exit(1); 
         } 
         else { // père
             //rien à faire: le fils s'en occupe
+            // attendre la fin du fils à cause d'un bug wsl
+            waitpid(pid, NULL, 0);
             close(fd);
         }
     }
