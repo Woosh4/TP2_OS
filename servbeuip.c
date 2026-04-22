@@ -298,11 +298,11 @@ void supprimeElt(char * adip){
 void listeElts(void) {
     pthread_mutex_lock(&mutex_annuaire);
     printf("----- ANNUAIRE -----\n");
-    printf("-- PERSONNE -- ADRESSE -- \n");
+    printf("-- ADRESSE : PERSONNE -- \n");
     
     struct elt * curr = annuaire_head;
     while (curr != NULL) {
-        printf("%s --- %s\n", curr->nom, curr->adip);
+        printf("%s : %s\n", curr->adip, curr->nom);
         curr = curr->next;
     }
     

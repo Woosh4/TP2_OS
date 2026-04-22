@@ -154,6 +154,10 @@ void beuip_comm(int N, char* P[]) {
         beuip_stop(N - 1, P + 1);
         return;
     }
+    if (strcmp(P[1], "list") == 0) {
+        beuip_list(N - 1, P + 1);
+        return;
+    }
     if (strcmp(P[1], "mess") == 0) {
         mess(N - 1, P + 1);
         return;

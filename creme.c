@@ -94,10 +94,6 @@ int mess(int argc, char* argv[]){
         printf("Erreur : serveur inactif.\n");
         return 1;
     }
-    if(argc == 2 && strcmp(argv[1], "-l") == 0){
-        commande('3', NULL, NULL);
-        return 0;
-    }
     if(argc >= 3 && strcmp(argv[1], "all") == 0){
         char msg_buf[256];
         concatener_message(msg_buf, argc, argv, 2);
@@ -110,8 +106,17 @@ int mess(int argc, char* argv[]){
         commande('4', msg_buf, argv[1]);
         return 0;
     }
-    printf("Utilisation invalide de beuip mess: beuip mess [-l; all; nom..]\n");
+    printf("Utilisation invalide de beuip mess: beuip mess [all; nom..]\n");
     return 1;
+}
+
+int beuip_list(int argc, char* argv[]){
+    if(!SERVEUR_LANCE) {
+        printf("Erreur : serveur inactif.\n");
+        return 1;
+    }
+    commande('3', NULL, NULL);
+    return 0;
 }
 
 void commande(char octet1, char * message, char * pseudo){

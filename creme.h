@@ -25,6 +25,8 @@ nom message pour envoi de message privé
 */
 int mess(int argc, char* argv[]);
 
+int beuip_list(int argc, char* argv[]);
+
 /* pour gérer les commandes internes */
 void commande(char octet1, char * message, char * pseudo);
 
