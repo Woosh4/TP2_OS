@@ -101,4 +101,5 @@ void cleanup_serveur_tcp(void *arg);
 /* Le thread du serveur TCP */
 void* serveur_tcp(void* rep);
 
+void envoiContenu(int fd, const char * rep);
 #endif

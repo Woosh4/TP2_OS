@@ -158,6 +158,15 @@ void beuip_comm(int N, char* P[]) {
         mess(N - 1, P + 1);
         return;
     }
+    if (strcmp(P[1], "ls") == 0) {
+        if (N < 3) {
+            printf("Utilisation : beuip ls pseudo\n");
+        } 
+        else {
+            demandeListe(P[2]);
+        }
+        return;
+    }
 
     printf("Commande beuip inconnue : '%s'\n", P[1]);
 }

@@ -154,3 +154,52 @@ void commande(char octet1, char * message, char * pseudo){
 
     close(sock_fd);
 }
+
+void demandeListe(char * pseudo) {
+    char ip_dest[16];
+    
+    pthread_mutex_lock(&mutex_annuaire);
+    struct elt* el = trouveEltnom(pseudo);
+    if (el == NULL) {
+        printf("Erreur : l'utilisateur '%s' n'est pas dans l'annuaire.\n", pseudo);
+        pthread_mutex_unlock(&mutex_annuaire);
+        return;
+    }
+    strcpy(ip_dest, el->adip);
+    pthread_mutex_unlock(&mutex_annuaire);
+
+    int sockfd;
+    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        perror("socket TCP client");
+        return;
+    }
+
+    struct sockaddr_in dest;
+    dest.sin_family = AF_INET;
+    dest.sin_port = htons(9998);
+    dest.sin_addr.s_addr = inet_addr(ip_dest);
+
+    if (connect(sockfd, (struct sockaddr*)&dest, sizeof(dest)) < 0) {
+        perror("connect TCP");
+        close(sockfd);
+        return;
+    }
+
+    //envoi L
+    if (write(sockfd, "L", 1) != 1) {
+        perror("write TCP");
+        close(sockfd);
+        return;
+    }
+
+    char buf[512];
+    int n;
+    printf("--- Fichiers de %s ---\n", pseudo);
+    while ((n = read(sockfd, buf, sizeof(buf) - 1)) > 0) {
+        buf[n] = '\0';
+        printf("%s", buf);
+    }
+    
+    printf("------------------------\n");
+    close(sockfd);
+}

@@ -30,4 +30,7 @@ void commande(char octet1, char * message, char * pseudo);
 
 /* gestion dynamique des interfaces de réseau*/
 void diffuser_broadcast_dynamique(int sock_fd, const char* message, int port_dest);
+
+/* TCP: demander la liste des fichiers du pseudo*/
+void demandeListe(char * pseudo);
 #endif

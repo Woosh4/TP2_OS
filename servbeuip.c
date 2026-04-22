@@ -17,6 +17,7 @@ socket en mode non connecté */
 
 #include <ifaddrs.h>
 #include <netdb.h>
+#include <sys/wait.h>
 
 #include "servbeuip.h"
 
@@ -373,18 +374,59 @@ void* serveur_tcp(void * rep){
 
     // pour fermer le socket listen_fd à la fin du thread + autre éventuellement
     pthread_cleanup_push(cleanup_serveur_tcp, &listen_fd);
-
+    //détruire les zombies
+    signal(SIGCHLD, SIG_IGN);
     while(1) {
         conn_fd = accept(listen_fd, (struct sockaddr*)NULL, NULL);
         if (conn_fd < 0) continue;
 
         if(trace) printf("Nouvelle connexion TCP acceptée !\n");
         
-        
+
 
         close(conn_fd); 
     }
 
     pthread_cleanup_pop(1);
     return NULL;
+}
+
+void envoiContenu(int fd, const char * rep) {
+    char cmd;
+    
+    //1er octet
+    if (read(fd, &cmd, 1) <= 0) {
+        close(fd);
+        return;
+    }
+
+    if (cmd == 'L') {
+        pid_t pid = fork();
+        if (pid < 0) {
+            perror("fork TCP");
+            close(fd);
+            return;
+        }
+
+        if (pid == 0) { // fils
+            // Redirection de la sortie standard et d'erreur vers le socket
+            dup2(fd, STDOUT_FILENO);
+            dup2(fd, STDERR_FILENO);
+            close(fd);
+
+            // Exécution de ls -l sur le répertoire
+            execlp("ls", "ls", "-l", rep, NULL);
+            
+            perror("Erreur execlp ls");
+            exit(1); 
+        } 
+        else { // père
+            //rien à faire: le fils s'en occupe
+            close(fd);
+        }
+    }
+    else{
+        // Commande inconnue
+        close(fd);
+    }
 }
