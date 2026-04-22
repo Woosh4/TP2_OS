@@ -120,12 +120,6 @@ int beuip_list(int argc, char* argv[]){
 }
 
 void commande(char octet1, char * message, char * pseudo){
-    int sock_fd;
-    if((sock_fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
-        perror("socket commande");
-        return;
-    }
-
     if(octet1 == '3'){ //liste
         listeElts();
     } 
@@ -138,28 +132,27 @@ void commande(char octet1, char * message, char * pseudo){
         
         if (el == NULL) {
             printf("Erreur : l'utilisateur '%s' n'est pas dans l'annuaire.\n", pseudo);
-            pthread_mutex_unlock(&mutex_annuaire);
-        } else {
+        }
+        else {
             struct sockaddr_in dest;
             dest.sin_family = AF_INET;
             dest.sin_port = htons(9998);
             dest.sin_addr.s_addr = inet_addr(el->adip);
             
-            sendto(sock_fd, sendbuf, strlen(sendbuf), 0, (struct sockaddr*)&dest, sizeof(dest));
-            pthread_mutex_unlock(&mutex_annuaire);
+            sendto(sid, sendbuf, strlen(sendbuf), 0, (struct sockaddr*)&dest, sizeof(dest));
+            
         }
+        pthread_mutex_unlock(&mutex_annuaire);
     }
     else if (octet1 == '0') { //beuip stop
         char deco_msg[] = "0BEUIP";
-        diffuser_broadcast_dynamique(sock_fd, deco_msg, 9998);
+        diffuser_broadcast_dynamique(sid, deco_msg, 9998);
     }
     else if (octet1 == '5') { //beuip mess all
         char sendbuf[512];
         sprintf(sendbuf, "9BEUIP%s", message);
-        diffuser_broadcast_dynamique(sock_fd, sendbuf, 9998);
+        diffuser_broadcast_dynamique(sid, sendbuf, 9998);
     }
-
-    close(sock_fd);
 }
 
 void demandeListe(char * pseudo) {
