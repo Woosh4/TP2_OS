@@ -426,6 +426,7 @@ void envoiContenu(int fd, const char * rep) {
             //rien à faire: le fils s'en occupe
             // attendre la fin du fils à cause d'un bug wsl
             waitpid(pid, NULL, 0);
+            usleep(100000);
             close(fd);
         }
     }
@@ -472,6 +473,9 @@ void envoiContenu(int fd, const char * rep) {
             exit(1);
         }
         else { //père
+            //fix bug windows
+            waitpid(pid, NULL, 0);
+            usleep(100000);
             close(fd);
         }
     }
