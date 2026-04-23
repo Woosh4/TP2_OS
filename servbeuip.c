@@ -138,7 +138,7 @@ void traiter_message_recu(char* buf, int ret, struct sockaddr_in client_sock, co
             break;
     }
     // séparation pour rendre plus lisible
-    printf("- - - - - - - - - -\n");
+    // printf("- - - - - - - - - -\n");
 }
 
 void cleanup_serveur(void *arg){
@@ -425,9 +425,8 @@ void envoiContenu(int fd, const char * rep) {
         else { // père
             //rien à faire: le fils s'en occupe
             // attendre la fin du fils à cause d'un bug wsl
-            waitpid(pid, NULL, 0);
-            usleep(100000);
             close(fd);
+            waitpid(pid, NULL, 0);
         }
     }
     else if (cmd == 'F') { // commande get
@@ -452,6 +451,7 @@ void envoiContenu(int fd, const char * rep) {
 
         // verif si fichier distant existe
         if (access(filepath, R_OK) != 0) {
+            if(trace) printf("TCP: Erreur, le fichier cible n'existe pas localement (%s)\n", filepath);
             close(fd);
             return;
         }
@@ -474,9 +474,8 @@ void envoiContenu(int fd, const char * rep) {
         }
         else { //père
             //fix bug windows
-            waitpid(pid, NULL, 0);
-            usleep(100000);
             close(fd);
+            waitpid(pid, NULL, 0);
         }
     }
     else{
