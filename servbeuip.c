@@ -474,7 +474,7 @@ void envoiContenu(int fd, const char * rep) {
         }
         else { //père
             //fix bug windows
-            // waitpid(pid, NULL, 0);
+            waitpid(pid, NULL, 0);
             close(fd);
         }
     }
