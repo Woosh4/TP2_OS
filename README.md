@@ -31,7 +31,9 @@ L'application est divisée en trois couches principales :
 Un Makefile est fourni à la racine du projet. Pour compiler :
 ```bash
 make go
+```
 ou bien
+```bash
 make; ./biceps
 ```
 ## Notes :
