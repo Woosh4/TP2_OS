@@ -8,10 +8,10 @@ biceps : biceps.o gescom.o creme.o servbeuip.o
 	cc -o biceps biceps.o gescom.o creme.o servbeuip.o -Wall -Werror -lreadline -pthread
 
 memory-leak : biceps.o gescom.o creme.o servbeuip.o
-	cc -o biceps-memory-leaks biceps.o gescom.o creme.o servbeuip.o -Wall -Werror -lreadline -pthread -g -O0
+	cc -o biceps biceps.o gescom.o creme.o servbeuip.o -Wall -Werror -lreadline -pthread -g -O0
 
 biceps-valgrind : memory-leak
-	valgrind --leak-check=full --track-origins=yes ./biceps-memory-leaks -DTRACE
+	valgrind --leak-check=full --track-origins=yes ./biceps -DTRACE
 
 biceps.o : biceps.c
 	cc -o biceps.o -c biceps.c -Wall -Werror
@@ -34,5 +34,5 @@ servbeuip.o : servbeuip.c
 # 	cc -o cli cliudp.c -Wall -Werror
 
 clean :
-	rm -f biceps-memory-leaks biceps servbeuip cli *.o *.exe
+	rm -f biceps-memory-leaks biceps servbeuip cli serv biceps-debug *.o *.exe
 
