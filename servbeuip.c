@@ -425,8 +425,8 @@ void envoiContenu(int fd, const char * rep) {
         else { // père
             //rien à faire: le fils s'en occupe
             // attendre la fin du fils à cause d'un bug wsl
-            close(fd);
             waitpid(pid, NULL, 0);
+            close(fd);
         }
     }
     else if (cmd == 'F') { // commande get
@@ -474,8 +474,8 @@ void envoiContenu(int fd, const char * rep) {
         }
         else { //père
             //fix bug windows
+            // waitpid(pid, NULL, 0);
             close(fd);
-            waitpid(pid, NULL, 0);
         }
     }
     else{
