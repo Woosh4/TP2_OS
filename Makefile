@@ -8,7 +8,7 @@ biceps : biceps.o gescom.o creme.o servbeuip.o
 	cc -o biceps biceps.o gescom.o creme.o servbeuip.o -Wall -Werror -lreadline -pthread
 
 memory-leak : biceps.o gescom.o creme.o servbeuip.o
-	cc -o biceps biceps.o gescom.o creme.o servbeuip.o -Wall -Werror -lreadline -pthread -g -O0
+	cc -g -O0 -o biceps biceps.o gescom.o creme.o servbeuip.o -Wall -Werror -lreadline -pthread
 
 biceps-valgrind : memory-leak
 	valgrind --leak-check=full --track-origins=yes ./biceps -DTRACE
