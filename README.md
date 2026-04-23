@@ -38,4 +38,4 @@ make; ./biceps
 - La librairie `libreadline-dev` est nécessaire
 - Le code a été fait pour fonctionner sous Linux natif, utiliser des alternatives peut provoquer des erreurs (wsl 1/2 par exemple)
 - La gestion des interfaces réseau se fait automatiquement, comme demandé dans le sujet; il n'y a plus de #define pour une adresse fixe.
-- Utilisation de 'IA. Je me suis aidé de Google Gemini : grandement pour le debug et le readme, et raisonnablement pour la réalisation de certaines fonctions.
+- Utilisation de l'IA: Je me suis aidé de Google Gemini : grandement pour le debug et le readme, et raisonnablement pour la réalisation de certaines fonctions.
