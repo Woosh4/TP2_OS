@@ -383,9 +383,7 @@ void* serveur_tcp(void * rep){
         if (conn_fd < 0) continue;
 
         if(trace) printf("Nouvelle connexion TCP acceptée !\n");
-        
-
-
+        envoiContenu(conn_fd, directory);
         close(conn_fd); 
     }
 
